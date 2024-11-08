@@ -71,7 +71,7 @@ class ASDFile(object):
             except Exception as e:
                 logger.exception(f"Error in reading the file.\nError: {e}")
         
-        # 结合C# 884行进行版本判断
+        # refering C# Line 884 to identify the file version
         self.asdFileVersion, offset = self.__validate_fileVersion()
 
         if self.asdFileVersion > 0:
