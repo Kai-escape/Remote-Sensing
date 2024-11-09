@@ -1,6 +1,7 @@
 """
 According to "ASD File Format version 8: Revision B"
 """
+from math import pi
 import os
 import struct
 import datetime
@@ -135,11 +136,11 @@ class ASDFile(object):
                         # Read Audit Data
                         offset = self.__parse_auditLog(offset)
                     except Exception as e:
-                        logger.exception(f"Error in parsing the audit log header.\nError: {e}")
+                        logger.exception(f"Error in parsing the audit log.\nError: {e}")
                     try:
                         offset = self.__parse_signature(offset)
                     except Exception as e:
-                        logger.exception(f"Error in parsing the signature header.\nError: {e}")
+                        logger.exception(f"Error in parsing the signature.\nError: {e}")
             
             readSuccess = True
         return readSuccess
@@ -719,6 +720,50 @@ class ASDFile(object):
         except Exception as e:
             logger.exception(f"Signature wrap error: {e}")
             return None, None
+
+    @__check_offset
+    def __parse_auditLog(self, offset):
+        try:
+            initOffset = offset
+            auditLogInfo = namedtuple('auditLog', 'auditCount auditEvents byteStream byteStreamLength')
+            additCount, = struct.unpack_from('l', self.__asdFileStream, offset)
+            offset += struct.calcsize('l')
+            if additCount > 0:
+                offset += 10
+                auditEvents, auditEventsLength = self.__parse_auditEvents(offset)
+                offset += auditEventsLength
+            self.auditLog = auditLogInfo._make((additCount, auditEvents, self.__asdFileStream[initOffset:offset], len(self.__asdFileStream[initOffset:offset])))
+            # logger.info(f"Read: audit log header end offset: {offset}")
+            return offset
+        except Exception as e:
+            logger.exception(f"Audit Log Header parse error: {e}")
+            return None
+    
+    def __wrap_auditLog(self):
+        try:
+            byteStream = struct.pack('l', self.auditLog.auditCount)
+            auditBytes = b''
+            if self.auditLog.auditCount > 0:
+                auditBytes += struct.pack('H', 1)
+                auditBytes += struct.pack('I', self.auditLog.auditCount)
+                auditBytes += struct.pack('I', 0)
+                auditEventsBytes, auditBytesLength = self.__wrap_auditEvents(self.auditLog.auditEvents)
+                auditBytes += auditEventsBytes
+            byteStream += auditBytes
+            byteStreamLength = len(byteStream)
+            return byteStream, byteStreamLength
+        except Exception as e:
+            logger.exception(f"Audit Log Header wrap error: {e}")
+            return None, None
+
+    @__check_offset
+    def __parse_signatureHeader(self, offset):
+        return offset
+
+    def __wrap_signatureHeader(self):
+        byteStream = b''
+        byteStreamLength = len(byteStream)
+        return byteStream, byteStreamLength
 
     @__check_offset
     def __parse_spectra(self, offset):

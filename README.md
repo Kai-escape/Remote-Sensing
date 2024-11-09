@@ -4,7 +4,7 @@ Including:
 
 - ASD spectral file reading, modifying, and writing.
 
-  | ASD File Structure             | ASDFile class:                                       |
+  | ASD File Structure             | ASDFile class                                       |
   | ------------------------------ | ---------------------------------------------------- |
   | Spectrum File Header           | self.asdFileVersion; self.metadata                   |
   | Spectrum Data                  | self.spectrumData                                    |
