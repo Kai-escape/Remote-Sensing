@@ -4,9 +4,10 @@ According to "ASD File Format version 8: Revision B"
 import os
 import struct
 import datetime
+import re
+import logging
 import numpy as np
 from collections import namedtuple
-import logging
 
 spectra_type = ('RAW', 'REF', 'RAD', 'NOUNITS', 'IRRAD', 'QI', 'TRANS', 'UNKNOWN', 'ABS')   # metadata.dataType, offset = 186: 0 = raw, 1 = reflectance, 2 = radiance, 3 = no units, 4 = irradiance, 5 = quality index, 6 = transmittance, 7 = unknown, 8 = absorbance
 data_type = ('FLOAT', 'INTEGER', 'DOUBLE', 'UNKNOWN')       # Spectrum data format (variable data_format at byte offset 199): 0 = float, 1 = integer, 2 = double, 3 = unknown
@@ -16,7 +17,7 @@ instrument_type = ('UNKNOWN', 'PSII', 'LSVNIR', 'FSVNIR', 'FSFR', 'FSNIR', 'CHEM
 
 # ASD File verions
 version_dict = { "Invalid": 0, "ASD": 1, "as2": 2, "as3": 3, "as4": 4, "as5": 5, "as6": 6, "as7": 7, "as8": 8}
-# auditLogHeader
+# auditLog
 audit_dict = {}
 
 # ClassifierData
@@ -53,8 +54,8 @@ class ASDFile(object):
         self.calibrationSeriesBSE = None
         self.calibrationSeriesLMP = None
         self.calibrationSeriesFO = None
-        self.auditLogHeader = None
-        self.signatureHeader = None
+        self.auditLog = None
+        self.signature = None
 
         self.__asdFileStream = None
         self.__wavelengths = None
@@ -124,18 +125,21 @@ class ASDFile(object):
                                     self.calibrationSeriesLMP, _, _, offset = self.__parse_spectra(offset)
                                 elif hdr[0] == 3:
                                     self.calibrationSeriesFO, _, _, offset = self.__parse_spectra(offset)
-                        else:
-                            logger.info(f"Calibration data is not available.")
+                        # else:
+                        #     logger.info(f"Calibration data is not available.")
                     except Exception as e:
                         logger.exception(f"Error in parsing the calibration data.\nError: {e}")
                 
                 if self.asdFileVersion >= 8:
                     try:
                         # Read Audit Data
-                        self.auditLogHeader, offset = self.__parse_auditLogHeader(offset)
-                        self.signatureHeader, offset = self.__parse_signatureHeader(self.__asdFileStream, offset)
+                        offset = self.__parse_auditLog(offset)
                     except Exception as e:
-                        logger.exception(f"Error in parsing the audit log header and signature header.\nError: {e}")
+                        logger.exception(f"Error in parsing the audit log header.\nError: {e}")
+                    try:
+                        offset = self.__parse_signature(offset)
+                    except Exception as e:
+                        logger.exception(f"Error in parsing the signature header.\nError: {e}")
             
             readSuccess = True
         return readSuccess
@@ -167,28 +171,28 @@ class ASDFile(object):
                 asdFileVersionBytes, offset = self.__setFileVersion()
                 fileHandle.write(asdFileVersionBytes)
             if self.metadata:
-                metadataBytes, byteLength = self.__warp_metadata()
+                metadataBytes, byteLength = self.__wrap_metadata()
                 offset += byteLength
                 fileHandle.write(metadataBytes)
                 # logger.info(f"Write: Metadata offset: {offset}")
             if self.spectrumData:
-                spectrumDataBytes, byteLength = self.__warp_spectrumData()
+                spectrumDataBytes, byteLength = self.__wrap_spectrumData()
                 offset += byteLength
                 fileHandle.write(spectrumDataBytes)
                 # logger.info(f"Write: Spectrum Data offset: {offset}")
                 if self.asdFileVersion >= 2:        
                     if self.referenceFileHeader:
-                        referenceFileHeaderBytes, byteLength = self.__warp_referenceFileHeader()
+                        referenceFileHeaderBytes, byteLength = self.__wrap_referenceFileHeader()
                         offset = offset + byteLength
                         fileHandle.write(referenceFileHeaderBytes)
                         # logger.info(f"Write: Reference File Header offset: {offset}")
                     if self.referenceData:
-                        referenceDataBytes, byteLength = self.__warp_referenceData()
+                        referenceDataBytes, byteLength = self.__wrap_referenceData()
                         fileHandle.write(referenceDataBytes)
                         offset = offset + byteLength
                         # logger.info(f"Write: Reference Data offset: {offset}")
                     if self.classifierData:
-                        classifierDataBytes, byteLength = self.__warp_classifierData()
+                        classifierDataBytes, byteLength = self.__wrap_classifierData()
                         fileHandle.write(classifierDataBytes)
                         offset = offset + byteLength
                         # logger.info(f"Write: Classifier Data offset: {offset}")
@@ -199,7 +203,7 @@ class ASDFile(object):
                         # logger.info(f"Write: Dependants write offset: {offset}")
                     if self.asdFileVersion >= 7:
                         if self.calibrationHeader:
-                            calibrationHeadersBytes, byteLength = self.__warp_calibrationHeader()
+                            calibrationHeadersBytes, byteLength = self.__wrap_calibrationHeader()
                             offset = offset + byteLength
                             fileHandle.write(calibrationHeadersBytes)
                             # logger.info(f"Write: Calibration Header write offset: {offset}")
@@ -226,10 +230,14 @@ class ASDFile(object):
                                     fileHandle.write(calibrationSeriesFOBytes)
                                     # logger.info(f"Write: Calibration Series FO write offset: {offset}")      
                         if self.asdFileVersion >= 8:
-                            auditLogHeaderBytes, offset = self.__wrap_auditLogHeader()
-                            fileHandle.write(auditLogHeaderBytes)
-                            signatureHeaderBytes, offset = self.__wrap_signatureHeader()
-                            fileHandle.write(signatureHeaderBytes)
+                            auditLogBytes, byteLength = self.__wrap_auditLog()
+                            fileHandle.write(auditLogBytes)
+                            offset = offset + len(auditLogBytes)
+                            # logger.info(f"Write: Audit Log Header write offset: {offset}")
+                            signatureBytes, byteLength = self.__wrap_signature()
+                            fileHandle.write(signatureBytes)
+                            offset = offset + len(signatureBytes)
+                            # logger.info(f"Write: Signature Header write offset: {offset}")
 
             if self.__bom:
                 fileHandle.write(self.__bom)
@@ -289,7 +297,7 @@ class ASDFile(object):
         # logger.info(f"Read: metadata end offset: {offset}")
         return offset
     
-    def __warp_metadata(self):
+    def __wrap_metadata(self):
         asdMetadataFormat = '<157s 18s b b b b l b l f f b b b b b H 128s 56s L h h H H f f f f h b 4b H H H b L H H H H f f 27s 5b'
         try:
             byteStream = struct.pack(
@@ -349,10 +357,10 @@ class ASDFile(object):
             if len(byteStream) == 481:
                 return byteStream, 481
             else:
-                logger.info(f"Metadata warp error (not 481 bytes): {len(byteStream)}")
+                logger.info(f"Metadata wrap error (not 481 bytes): {len(byteStream)}")
                 return None, None
         except Exception as e:
-            logger.exception(f"Metadata (ASD File Header) warp error: {e}")
+            logger.exception(f"Metadata (ASD File Header) wrap error: {e}")
             return None
         
     @__check_offset
@@ -367,12 +375,12 @@ class ASDFile(object):
             logger.exception(f"Spectrum Data parse error: {e}")
             return None
     
-    def __warp_spectrumData(self):
+    def __wrap_spectrumData(self):
         try:
             byteStream, byteStreamLength = self.__wrap_spectra(self.spectrumData.spectra)
             return byteStream, byteStreamLength
         except Exception as e:
-            logger.exception(f"Spectrum Data warp error: {e}")
+            logger.exception(f"Spectrum Data wrap error: {e}")
             return None, None
 
     @__check_offset
@@ -394,7 +402,7 @@ class ASDFile(object):
             logger.exception(f"Reference File Header parse error: {e}")
             return None
     
-    def __warp_referenceFileHeader(self):
+    def __wrap_referenceFileHeader(self):
         try:
             referenceFlagBytes, byteStreamLength = self.__wrap_Bool(self.referenceFileHeader.referenceFlag)
             asdReferenceFormat = 'q q'
@@ -405,7 +413,7 @@ class ASDFile(object):
             byteStreamLength += lengthstr
             return byteStream, byteStreamLength
         except Exception as e:
-            logger.exception(f"Reference File Header warp error: {e}")
+            logger.exception(f"Reference File Header wrap error: {e}")
             return None, None
 
     @__check_offset
@@ -420,12 +428,12 @@ class ASDFile(object):
             logger.exception(f"Reference Data parse error: {e}")
             return None
     
-    def __warp_referenceData(self):
+    def __wrap_referenceData(self):
         try:
             byteStream, byteStreamLength = self.__wrap_spectra(self.referenceData.spectra)
             return byteStream, byteStreamLength
         except Exception as e:
-            logger.exception(f"Reference Data warp error: {e}")
+            logger.exception(f"Reference Data wrap error: {e}")
             return None, None
 
     @__check_offset
@@ -478,7 +486,7 @@ class ASDFile(object):
             logger.exception(f"classifier Data parse error: {e}")
             return None
 
-    def __warp_classifierData(self):
+    def __wrap_classifierData(self):
         try:
             calssifierData_1 = struct.pack('bb', self.classifierData.yCode, self.classifierData.yModelType)
             title_bstr, _ = self.__wrap_bstr(self.classifierData.title)
@@ -511,7 +519,7 @@ class ASDFile(object):
                 constituantByteStream += struct.pack('I', self.classifierData.constituantCount)
                 constituantByteStream += struct.pack('I', 0) 
                 for i in range(self.classifierData.constituantCount):
-                    item_packed, _ = self.__warp_constituantType(self.classifierData.constituantItems[i])
+                    item_packed, _ = self.__wrap_constituantType(self.classifierData.constituantItems[i])
                     constituantByteStream += item_packed
             if self.classifierData.constituantCount == 0:
                 constituantByteStream += b'\x00\x00'
@@ -519,8 +527,8 @@ class ASDFile(object):
             byteStreamLength = len(classifierDataByteStream)
             return classifierDataByteStream, byteStreamLength
         except Exception as e:
-            logger.exception(f"Classifier Data warp error: {e}")
-            return None
+            logger.exception(f"Classifier Data wrap error: {e}")
+            return None, None
 
     @__check_offset
     def __parse_dependentVariables(self, offset):
@@ -584,7 +592,7 @@ class ASDFile(object):
             byteStreamLength = len(byteStream)
             return byteStream, byteStreamLength
         except Exception as e:
-            logger.exception(f"Dependant Variable warp error: {e}")
+            logger.exception(f"Dependant Variable wrap error: {e}")
             return None, None
 
     @__check_offset
@@ -613,7 +621,7 @@ class ASDFile(object):
             logger.exception(f"Calibration Header parse error: {e}")
             return None
     
-    def __warp_calibrationHeader(self):
+    def __wrap_calibrationHeader(self):
         try:
             calibrationHeaderCountNum_format = 'b'
             calibrationSeries_buffer_format = '<b 20s i h h'
@@ -627,7 +635,89 @@ class ASDFile(object):
             byteStreamLength = len(calibrationSeriesBytes)
             return calibrationSeriesBytes, byteStreamLength
         except Exception as e:
-            logger.exception(f"Calibration Header warp error: {e}")
+            logger.exception(f"Calibration Header wrap error: {e}")
+            return None, None
+
+    @__check_offset
+    def __parse_auditLog(self, offset):
+        try:
+            initOffset = offset
+            auditLogInfo = namedtuple('auditLog', 'auditCount auditEvents byteStream byteStreamLength')
+            additCount, = struct.unpack_from('l', self.__asdFileStream, offset)
+            offset += struct.calcsize('l')
+            if additCount > 0:
+                offset += 10
+                auditEvents, auditEventsLength = self.__parse_auditEvents(offset)
+                offset += auditEventsLength
+            self.auditLog = auditLogInfo._make((additCount, auditEvents, self.__asdFileStream[initOffset:offset], len(self.__asdFileStream[initOffset:offset])))
+            # logger.info(f"Read: audit log header end offset: {offset}")
+            return offset
+        except Exception as e:
+            logger.exception(f"Audit Log Header parse error: {e}")
+            return None
+    
+    def __wrap_auditLog(self):
+        try:
+            byteStream = struct.pack('l', self.auditLog.auditCount)
+            auditBytes = b''
+            if self.auditLog.auditCount > 0:
+                auditBytes += struct.pack('H', 1)
+                auditBytes += struct.pack('I', self.auditLog.auditCount)
+                auditBytes += struct.pack('I', 0)
+                auditEventsBytes, auditBytesLength = self.__wrap_auditEvents(self.auditLog.auditEvents)
+                auditBytes += auditEventsBytes
+            byteStream += auditBytes
+            byteStreamLength = len(byteStream)
+            return byteStream, byteStreamLength
+        except Exception as e:
+            logger.exception(f"Audit Log Header wrap error: {e}")
+            return None, None
+
+    @__check_offset
+    def __parse_signature(self, offset):
+        try:
+            initOffset = offset
+            signatureInfo = namedtuple('signature', 'signed, signatureTime, userDomain, userLogin, userName, source, reason, notes, publicKey, signature, byteStream, byteStreamLength')
+            signed, = struct.unpack_from('b', self.__asdFileStream, offset)
+            offset += struct.calcsize('b')
+            signatureTime, = struct.unpack_from('q', self.__asdFileStream, offset)
+            offset += struct.calcsize('q')
+            userDomain, offset = self.__parse_bstr(offset)
+            userLogin, offset = self.__parse_bstr(offset)
+            userName, offset = self.__parse_bstr(offset)
+            source, offset = self.__parse_bstr(offset)
+            reason, offset = self.__parse_bstr(offset)
+            notes, offset = self.__parse_bstr(offset)
+            publicKey, offset = self.__parse_bstr(offset)
+            # signature, offset = self.__parse_bstr(offset)
+            signature, = struct.unpack_from('128s', self.__asdFileStream, offset)
+            offset += struct.calcsize('128s')
+            byteStream = self.__asdFileStream[initOffset:offset]
+            byteStreamLength = len(byteStream)
+            self.signature = signatureInfo._make((signed, signatureTime, userDomain, userLogin, userName, source, reason, notes, publicKey, signature, byteStream, byteStreamLength))
+            # logger.info(f"Read: signature end offset: {offset}")
+        except Exception as e:
+            logger.exception(f"Signature parse error: {e}")
+            return None
+        return offset
+
+    def __wrap_signature(self):
+        try:
+            signedBytes = struct.pack('b', self.signature.signed)
+            signatureTimeBytes = struct.pack('q', self.signature.signatureTime)
+            userDomainBytes, _ = self.__wrap_bstr(self.signature.userDomain)
+            userLoginBytes, _ = self.__wrap_bstr(self.signature.userLogin)
+            userNameBytes, _ = self.__wrap_bstr(self.signature.userName)
+            sourceBytes, _ = self.__wrap_bstr(self.signature.source)
+            reasonBytes, _ = self.__wrap_bstr(self.signature.reason)
+            notesBytes, _ = self.__wrap_bstr(self.signature.notes)
+            publicKeyBytes, _ = self.__wrap_bstr(self.signature.publicKey)
+            signatureBytes = struct.pack("128s", self.signature.signature)
+            byteStream = signedBytes + signatureTimeBytes + userDomainBytes + userLoginBytes + userNameBytes + sourceBytes + reasonBytes + notesBytes + publicKeyBytes + signatureBytes
+            byteStreamLength = len(byteStream)
+            return byteStream, byteStreamLength
+        except Exception as e:
+            logger.exception(f"Signature wrap error: {e}")
             return None, None
 
     @__check_offset
@@ -649,7 +739,7 @@ class ASDFile(object):
             # logger.info(f"Spectrum data bytes length: {byteLength}")
             return spectrumDataBytes, byteLength
         except Exception as e:
-            logger.exception(f"Spectrum data warp error {e}")
+            logger.exception(f"Spectrum data wrap error {e}")
             return None, None
 
     @__check_offset
@@ -668,7 +758,7 @@ class ASDFile(object):
             logger.exception(f"Constituant Type parse error {e}")
             return None, None
     
-    def __warp_constituantType(self, itemsInMeterialReport):
+    def __wrap_constituantType(self, itemsInMeterialReport):
         try:
             constituentName_bstr, _ = self.__wrap_bstr(itemsInMeterialReport.constituentName)
             passFail_bstr, _ = self.__wrap_bstr(itemsInMeterialReport.passFail)
@@ -678,7 +768,7 @@ class ASDFile(object):
             byteStreamLength = len(byteStream)
             return byteStream, byteStreamLength
         except Exception as e:
-            logger.exception(f"Constituant type warp error {e}")
+            logger.exception(f"Constituant type wrap error {e}")
             return None, None
 
     @__check_offset
@@ -743,6 +833,40 @@ class ASDFile(object):
         except Exception as e:
             raise e
         return None, None
+    
+    @__check_offset
+    def __parse_auditEvents(self, offset):
+        try:
+            # size, = struct.unpack_from('<h', self.__asdFileStream, offset)
+            # offset += struct.calcsize('<h')
+            auditEvents_str = self.__asdFileStream[offset:].decode('utf-8', errors='ignore')
+            auditPattern = re.compile(r'<Audit_Event>(.*?)</Audit_Event>', re.DOTALL)
+            auditEvents = auditPattern.findall(auditEvents_str)
+            auditEvents_list = []
+            auditEventLength = 0
+            for auditEvent in auditEvents:
+                auditEvent = "<Audit_Event>" + auditEvent + "</Audit_Event>"
+                auditEventLength += len(auditEvent.encode('utf-8')) + 2
+                auditEvents_list.append(auditEvent)
+            return auditEvents_list, auditEventLength
+        except Exception as e:
+            logger.exception(f"Audit Event parse error: {e}")
+            return None, None
+        
+    def __wrap_auditEvents(self, auditEvents):
+        try:
+            byteStream = b''
+            for auditEvent in auditEvents:
+                size = len(auditEvent)
+                auditEvent_bster = auditEvent.encode('utf-8')
+                byteStream += struct.pack('<h', size) + auditEvent_bster
+                # byteStream += auditEvent_bster
+                byteStreamLength = len(byteStream)
+            return byteStream, byteStreamLength
+        except Exception as e:
+            logger.exception(f"Audit Event wrap error: {e}")
+            return None, None
+
 
     def __getattr__(self, item):
         if item == 'reflectance':
@@ -755,25 +879,6 @@ class ASDFile(object):
             return self.spectrumData
         elif item == 'ref':
             return self.reference
-
-    @__check_offset
-    def __parse_auditLogHeader(self, offset):
-        audit = b''
-        return audit, offset
-    
-    def __wrap_auditLogHeader(self):
-        byteStream = b''
-        byteStreamLength = len(byteStream)
-        return byteStream, byteStreamLength
-
-    @__check_offset
-    def __parse_signatureHeader(self, offset):
-        return offset
-
-    def __wrap_signatureHeader(self):
-        byteStream = b''
-        byteStreamLength = len(byteStream)
-        return byteStream, byteStreamLength
 
     def get_reflectance(self):
         if spectra_type[self.metadata.dataType] == 'REF':
