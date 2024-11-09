@@ -37,6 +37,11 @@ flag1_swir1_saturation = 2
 flag1_swir2_saturation = 4
 Tec1_alarm = 8
 Tec2_alarm = 16
+# // Vnir Saturation    0 0 0 0  0 0 0 1   0x01
+# // Swir1 Saturation   0 0 0 0  0 0 1 0   0x02
+# // Swir2 Saturation   0 0 0 0  0 1 0 0   0x04
+# // Swir1 Tec Alarm    0 0 0 0  1 0 0 0   0x08
+# // Swir2 Tec Alarm    0 0 0 1  0 0 0 0   0x16
 
 
 class ASDFile(object):
@@ -839,8 +844,6 @@ class ASDFile(object):
     @__check_offset
     def __parse_auditEvents(self, offset):
         try:
-            # size, = struct.unpack_from('<h', self.__asdFileStream, offset)
-            # offset += struct.calcsize('<h')
             auditEvents_str = self.__asdFileStream[offset:].decode('utf-8', errors='ignore')
             auditPattern = re.compile(r'<Audit_Event>(.*?)</Audit_Event>', re.DOTALL)
             auditEvents = auditPattern.findall(auditEvents_str)
@@ -881,8 +884,14 @@ class ASDFile(object):
             return self.spectrumData
         elif item == 'ref':
             return self.reference
+        else:
+            return None
 
-    def get_reflectance(self):
+    @property
+    def reflectance(self):
+        if self.asdFileVersion >= 2:
+            if self.metadata.referenceTime > 0:
+
         if spectra_type[self.metadata.dataType] == 'REF':
             res = self.__normalise_spectrum(self.spectrumData, self.metadata) / self.__normalise_spectrum(self.reference, self.metadata)
         else:
@@ -972,85 +981,43 @@ class ASDFile(object):
         return byteStream
     
     def __parse_gps(self, gps_field):
+        # Domumentation: ASD File Format Version 8, page 4
         gps_tuple = namedtuple('gpsdata', 'heading speed latitude longitude altitude')
-        return gps_tuple
+        try:
+            gpsDatadFormat = '<d d d d d h b b b b b h 5s b b'
+            gpsDataInfo = namedtuple('gpsData', 'trueHeading speed latitude longitude altitude lock hardwareMode ss mm hh flags1 flags2 satellites filler')
+            trueHeading, speed, latitude, longitude, altitude, lock, hardwareMode, ss, mm, hh, flags1, flags2, satellites, filler = struct.unpack(gpsDatadFormat, gps_field)
+            gpsData = gpsDataInfo._make((trueHeading, speed, latitude, longitude, altitude, lock, hardwareMode, ss, mm, hh, flags1, flags2, satellites, filler))
+            return gpsData
+        except Exception as e:
+            logger.exception(f"GPS parse error: {e}")
+            return None
     
     def __wrap_gps(self, gpsData):
-        # referred in page 4 of the manual
-        # true_heading = 0
-        # speed = 0
-        # latitude = 0
-        # longitude = 0
-        # altitude = 0
-        # lock = 0
-        # hardware_mode = 0
-        # ss = 0
-        # mm = 0
-        # hh = 0
-        # flags1 = 0
-        # flags2 = 0
-        # satellites = [0,0,0,0,0]
-        # filler = [0,0]
-        # var dataView = this._getDataView(fd, 56);
-        # this.spectrumHeader.gpsData.true_heading = dataView.getFloat64(0, true);
-        # this.spectrumHeader.gpsData.speed = dataView.getFloat64(8, true);
-        # this.spectrumHeader.gpsData.latitude = dataView.getFloat64(16, true);
-        # this.spectrumHeader.gpsData.longitude = dataView.getFloat64(24, true);
-        # this.spectrumHeader.gpsData.altitude = dataView.getFloat64(32, true);
-        # this.spectrumHeader.gpsData.lock = dataView.getInt16(40, true);
-        # this.spectrumHeader.gpsData.hardware_mode = dataView.getInt8(42);
-        # this.spectrumHeader.gpsData.ss = dataView.getInt8(43);
-        # this.spectrumHeader.gpsData.mm = dataView.getInt8(44);
-        # this.spectrumHeader.gpsData.hh = dataView.getInt8(45);
-        # this.spectrumHeader.gpsData.flags1 = dataView.getInt8(46);
-        # this.spectrumHeader.gpsData.flags2 = dataView.getInt16(47);
-        # this.spectrumHeader.gpsData.satellites[0] = dataView.getInt8(49);
-        # this.spectrumHeader.gpsData.satellites[1] = dataView.getInt8(50);
-        # this.spectrumHeader.gpsData.satellites[2] = dataView.getInt8(51);
-        # this.spectrumHeader.gpsData.satellites[3] = dataView.getInt8(52);
-        # this.spectrumHeader.gpsData.satellites[4] = dataView.getInt8(53);
-        # this.spectrumHeader.gpsData.filler[0] = dataView.getInt8(54);
-        # this.spectrumHeader.gpsData.filler[1] = dataView.getInt8(55);
-        # public double true_heading;
-        # public double speed;
-        # public double latitude;
-        # public double longitude;
-        # public double altitude;
-        # public short flags;
-        # public byte hardware_mode;
-        # public byte ss;                     // UTC seconds
-        # public byte mm;                     // UTC minutes
-        # public byte hh;                     // UTC hours
-        # public byte flags1;                 // Not Used        
-        # public short flags2;
-        # [MarshalAs(UnmanagedType.ByValArray, SizeConst = 5)]
-        # public byte[] satellites;
-        # public byte filler1;
-        # public byte filler2;
-        pass
+        try:
+            gpsDatadFormat = '<d d d d d h b b b b b h 5s b b'
+            gpsDataBytes = struct.pack(gpsDatadFormat, gpsData.trueHeading, gpsData.speed, gpsData.latitude, gpsData.longitude, gpsData.altitude, gpsData.lock, gpsData.hardwareMode, gpsData.ss, gpsData.mm, gpsData.hh, gpsData.flags1, gpsData.flags2, gpsData.satellites, gpsData.filler)
+            return gpsDataBytes
 
-    def __asdFileSmartDetectorType(self, smartDetectorType):
-        # referred in page 5 of the manual
-        # {
-        # int serial_number;
-        # float Signal
-        # float dark
-        # float ref
-        # short Status
-        # byte avg
-        # float humid
-        # float temp
-        # }
-        pass
-
-
-
-# computeReflectance()
-# computeLog1R()
-# computeDerivative(double[] data, int gap)
-# computeAbsoluteReflectance()
-# computeReflectanceNo
-# computeReflectance
+    def __parse_SmartDetector(self, smartDetectorData):
+        try:
+            smartDetectorFormat = '<i f f f h b f f'
+            smartDetectorInfo = namedtuple('smartDetector', 'serialNumber signal dark ref status avg humid temp')
+            serialNumber, signal, dark, ref, status, avg, humid, temp = struct.unpack(smartDetectorFormat, smartDetectorData)
+            smartDetector = smartDetectorInfo._make((serialNumber, signal, dark, ref, status, avg, humid, temp))
+            return smartDetector
+        except Exception as e:
+            logger.exception(f"Smart Detector parse error: {e}")
+            return None
+    
+    def __wrap_SmartDetector(self, smartDetectorData):
+        try:
+            smartDetectorFormat = '<i f f f h b f f'
+            smartDetectorBytes = struct.pack(smartDetectorFormat, smartDetectorData.serialNumber, smartDetectorData.signal, smartDetectorData.dark, smartDetectorData.ref, smartDetectorData.status, smartDetectorData.avg, smartDetectorData.humid, smartDetectorData.temp)
+            return smartDetectorBytes
+        except Exception as e:
+            logger.exception(f"Smart Detector wrap error: {e}")
+            return None
 
 
 # define logger
