@@ -68,6 +68,9 @@ class ASDFile(object):
                 # read in file to memory(buffer)
                 with open(filePath, 'rb') as fileHandle:
                     self.__asdFileStream = fileHandle.read()
+                    if self.__asdFileStream[-3:] == b'\xFF\xFE\xFD':
+                        self.__bom = self.__asdFileStream[-3:]
+                        self.__asdFileStream = self.__asdFileStream[:-3]
             except Exception as e:
                 logger.exception(f"Error in reading the file.\nError: {e}")
         
@@ -227,7 +230,9 @@ class ASDFile(object):
                             fileHandle.write(auditLogHeaderBytes)
                             signatureHeaderBytes, offset = self.__wrap_signatureHeader()
                             fileHandle.write(signatureHeaderBytes)
-            fileHandle.write(b'\xFF\xFE\xFD')
+
+            if self.__bom:
+                fileHandle.write(self.__bom)
             # logger.info(f"{file} write success")
 
         return True
