@@ -8,7 +8,12 @@ import datetime
 import re
 import logging
 import numpy as np
+import xml.etree.ElementTree as ET
 from collections import namedtuple
+
+import xml
+
+from pyparsing import str_type
 
 spectra_type = ('RAW', 'REF', 'RAD', 'NOUNITS', 'IRRAD', 'QI', 'TRANS', 'UNKNOWN', 'ABS')   # metadata.dataType, offset = 186: 0 = raw, 1 = reflectance, 2 = radiance, 3 = no units, 4 = irradiance, 5 = quality index, 6 = transmittance, 7 = unknown, 8 = absorbance
 data_type = ('FLOAT', 'INTEGER', 'DOUBLE', 'UNKNOWN')       # Spectrum data format (variable data_format at byte offset 199): 0 = float, 1 = integer, 2 = double, 3 = unknown
@@ -853,20 +858,26 @@ class ASDFile(object):
                 auditEvent = "<Audit_Event>" + auditEvent + "</Audit_Event>"
                 auditEventLength += len(auditEvent.encode('utf-8')) + 2
                 auditEvents_list.append(auditEvent)
-            return auditEvents_list, auditEventLength
+            auditEventsTuple_list = []
+            for auditEvent in auditEvents_list:
+                auditEventtuple = self.__parse_auditLogEvent(auditEvent)
+                auditEventsTuple_list.append(auditEventtuple)
+            return auditEventsTuple_list, auditEventLength
         except Exception as e:
             logger.exception(f"Audit Event parse error: {e}")
             return None, None
         
     def __wrap_auditEvents(self, auditEvents):
         try:
-            byteStream = b''
+            auditEvents_bstr = b''
             for auditEvent in auditEvents:
-                size = len(auditEvent)
-                auditEvent_bster = auditEvent.encode('utf-8')
-                byteStream += struct.pack('<h', size) + auditEvent_bster
-                # byteStream += auditEvent_bster
-                byteStreamLength = len(byteStream)
+                auditEvent_bstr = self.__wrap_auditLogEvent(auditEvent)
+                auditEvents_bstr += auditEvent_bstr
+
+            # auditEvent_bstr = auditEvent.encode('utf-8')
+            size = len(auditEvent_bstr)
+            byteStream = struct.pack('<h', size) + auditEvent_bstr
+            byteStreamLength = len(byteStream)
             return byteStream, byteStreamLength
         except Exception as e:
             logger.exception(f"Audit Event wrap error: {e}")
@@ -889,8 +900,8 @@ class ASDFile(object):
 
     @property
     def reflectance(self):
-        if self.asdFileVersion >= 2:
-            if self.metadata.referenceTime > 0:
+        # if self.asdFileVersion >= 2:
+        #     if self.metadata.referenceTime > 0:
 
         if spectra_type[self.metadata.dataType] == 'REF':
             res = self.__normalise_spectrum(self.spectrumData, self.metadata) / self.__normalise_spectrum(self.reference, self.metadata)
@@ -998,6 +1009,9 @@ class ASDFile(object):
             gpsDatadFormat = '<d d d d d h b b b b b h 5s b b'
             gpsDataBytes = struct.pack(gpsDatadFormat, gpsData.trueHeading, gpsData.speed, gpsData.latitude, gpsData.longitude, gpsData.altitude, gpsData.lock, gpsData.hardwareMode, gpsData.ss, gpsData.mm, gpsData.hh, gpsData.flags1, gpsData.flags2, gpsData.satellites, gpsData.filler)
             return gpsDataBytes
+        except Exception as e:
+            logger.exception(f"GPS wrap error: {e}")
+            return None
 
     def __parse_SmartDetector(self, smartDetectorData):
         try:
@@ -1018,7 +1032,46 @@ class ASDFile(object):
         except Exception as e:
             logger.exception(f"Smart Detector wrap error: {e}")
             return None
+        
+    def __parse_auditLogEvent(self, event: str) -> namedtuple:
+        try:
+            auditInfo = namedtuple('event', 'application appVersion name login time source function notes')
+            root = ET.fromstring(event)
+            application = root.find('Audit_Application').text
+            appVersion = root.find('Audit_AppVersion').text
+            name = root.find('Audit_Name').text
+            login = root.find('Audit_Login').text
+            time = root.find('Audit_Time').text
+            source = root.find('Audit_Source').text
+            function = root.find('Audit_Function').text
+            notes = root.find('Audit_Notes').text
 
+            auditEvent_tuple = auditInfo._make((application, appVersion, name, login, time, source, function, notes))
+            return auditEvent_tuple
+        except Exception as e:
+            logger.exception(f"Audit Log Data parse error: {e}")
+            return None
+
+    def __wrap_auditLogEvent(self, event: namedtuple) -> str:
+
+        try:
+            doc = ET.Element('Audit_Event')
+            ET.SubElement(doc, 'Audit_Application').text = event.application
+            ET.SubElement(doc, 'Audit_AppVersion').text = event.appVersion
+            ET.SubElement(doc, 'Audit_Name').text = event.name
+            ET.SubElement(doc, 'Audit_Login').text = event.login
+            ET.SubElement(doc, 'Audit_Time').text = event.time
+            ET.SubElement(doc, 'Audit_Source').text = event.source
+            ET.SubElement(doc, 'Audit_Function').text = event.function
+            ET.SubElement(doc, 'Audit_Notes').text = event.notes
+
+            auditEvent_xml_xtr = ET.tostring(doc, encoding='utf-8')
+            # logger.info(f"Generated XML: {auditEvent_xml_xtr}")
+
+            return auditEvent_xml_xtr
+        except Exception as e:
+            logger.error(f"Error generating XML: {e}")
+            return None
 
 # define logger
 logging.basicConfig(
