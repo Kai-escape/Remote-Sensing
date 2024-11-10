@@ -1,7 +1,16 @@
-"""
-According to "ASD File Format version 8: Revision B"
-"""
-from math import pi
+# !/usr/bin/env python
+# -*- encoding: utf-8 -*-
+'''
+@File    :   asdFileHandle.py
+@Time    :   2024/11/10 04:09:34
+@Author  :   Kai Cao 
+@Version :   1.0
+@Contact :   caokai_cgs@163.com
+@License :   (C)Copyright 2023-2024
+Copyright Statement:   Full Copyright
+@Desc    :   According to "ASD File Format version 8: Revision B"
+'''
+
 import os
 import struct
 import datetime
@@ -11,9 +20,6 @@ import numpy as np
 import xml.etree.ElementTree as ET
 from collections import namedtuple
 
-import xml
-
-from pyparsing import str_type
 
 spectra_type = ('RAW', 'REF', 'RAD', 'NOUNITS', 'IRRAD', 'QI', 'TRANS', 'UNKNOWN', 'ABS')   # metadata.dataType, offset = 186: 0 = raw, 1 = reflectance, 2 = radiance, 3 = no units, 4 = irradiance, 5 = quality index, 6 = transmittance, 7 = unknown, 8 = absorbance
 data_type = ('FLOAT', 'INTEGER', 'DOUBLE', 'UNKNOWN')       # Spectrum data format (variable data_format at byte offset 199): 0 = float, 1 = integer, 2 = double, 3 = unknown
@@ -31,11 +37,7 @@ classifierData_type = {'SAM', 'GALACTIC', 'CAMOPREDICT', 'CAMOCLASSIFY', 'PCAZ',
 
 # CalibrationHeader
 calibrationType_dict = {"ABSOLUTE": 0, "BASE": 1, "LAMP": 2, "FIBER": 3}    # calibrationSeries.calibrationType, 0 = ABSOLUTE, 1 = BASE, 2 = LAMP, 3 = FIBER 
-
-# ABS, Absolute Reflectance File
-# BSE, Base File
-# LMP, Lamp File
-# FO, Fiber Optic File
+# ABS, Absolute Reflectance File; BSE, Base File; LMP, Lamp File; FO, Fiber Optic File
 
 flag1_vnir_saturation = 1
 flag1_swir1_saturation = 2
@@ -52,7 +54,6 @@ Tec2_alarm = 16
 class ASDFile(object):
     
     def __init__(self):
-
         self.asdFileVersion = 0
         self.metadata = None
         self.spectrumData = None
@@ -67,14 +68,11 @@ class ASDFile(object):
         self.calibrationSeriesFO = None
         self.auditLog = None
         self.signature = None
-
         self.__asdFileStream = None
         self.__wavelengths = None
 
     def read(self: object, filePath: str):
-
         readSuccess = False
-
         if os.path.exists(filePath) and os.path.isfile(filePath):
             try:
                 # read in file to memory(buffer)
@@ -85,176 +83,167 @@ class ASDFile(object):
                         self.__asdFileStream = self.__asdFileStream[:-3]
             except Exception as e:
                 logger.exception(f"Error in reading the file.\nError: {e}")
-        
         # refering C# Line 884 to identify the file version
         self.asdFileVersion, offset = self.__validate_fileVersion()
-
         if self.asdFileVersion > 0:
             try:
                 offset = self.__parse_metadata(offset)
-                self.__wavelengths = np.arange(self.metadata.channel1Wavelength, self.metadata.channel1Wavelength + self.metadata.channels * self.metadata.wavelengthStep, self.metadata.wavelengthStep)  
-                offset = self.__parse_spectrumData(offset)
+                self.__wavelengths = np.arange(self.metadata.channel1Wavelength, self.metadata.channel1Wavelength + self.metadata.channels * self.metadata.wavelengthStep, self.metadata.wavelengthStep)
             except Exception as e:
-                logger.exception(f"Error in parsing the metadata and spectrum data.\nError: {e}")
-
-            if self.asdFileVersion >= 2:
+                logger.exception(f"Error in parsing the metadata.\nError: {e}")
+            else:
                 try:
-                    offset = self.__parse_referenceFileHeader(offset)
+                    offset = self.__parse_spectrumData(offset)
                 except Exception as e:
-                    logger.exception(f"Error in parsing the reference file header.\nError: {e}")
+                    logger.exception(f"Error in parsing the metadata and spectrum data.\nError: {e}")
+        if self.asdFileVersion >= 2:
+            try:
+                offset = self.__parse_referenceFileHeader(offset)
+            except Exception as e:
+                logger.exception(f"Error in parsing the reference file header.\nError: {e}")
+            else:
                 try:
                     offset = self.__parse_referenceData(offset)
                 except Exception as e:
                     logger.exception(f"Error in parsing the reference data.\nError: {e}")
-
-                if self.asdFileVersion >= 6:
-                    try:
-                        # Read Classifier Data
-                        offset = self.__parse_classifierData(offset)
-                    except Exception as e:
-                        logger.exception(f"Error in parsing the classifier data.\nError: {e}")
-                    try:
-                        offset = self.__parse_dependentVariables(offset)
-                    except Exception as e:
-                        logger.exception(f"Error in parsing the depndant variables.\nError: {e}")
-
-                if self.asdFileVersion >= 7:
-                    try:
-                        # Read Calibration Header
-                        offset = self.__parse_calibrationHeader(offset)
-                    except Exception as e:
-                        logger.exception(f"Error in parsing the calibration header.\nError: {e}")
-                    try:
-                        if self.calibrationHeader and (self.calibrationHeader.calibrationNum > 0):
-                            # Parsing the calibration data according to 'ASD File Format version 8: Revision B', through the suquence of 'Absolute Calibration Data', 'Base Calibration Data', 'Lamp Calibration Data', 'Fiber Optic Data' successively.
-                            for hdr in self.calibrationHeader.calibrationSeries:  # Number of calibrationSeries buffers in the file.
-                                if hdr[0] == 0:
-                                    self.calibrationSeriesABS, _, _, offset = self.__parse_spectra(offset)
-                                elif hdr[0] == 1:
-                                    self.calibrationSeriesBSE, _, _, offset = self.__parse_spectra(offset)
-                                elif hdr[0] == 2:
-                                    self.calibrationSeriesLMP, _, _, offset = self.__parse_spectra(offset)
-                                elif hdr[0] == 3:
-                                    self.calibrationSeriesFO, _, _, offset = self.__parse_spectra(offset)
-                        # else:
-                        #     logger.info(f"Calibration data is not available.")
-                    except Exception as e:
-                        logger.exception(f"Error in parsing the calibration data.\nError: {e}")
-                
-                if self.asdFileVersion >= 8:
-                    try:
-                        # Read Audit Log
-                        offset = self.__parse_auditLog(offset)
-                    except Exception as e:
-                        logger.exception(f"Error in parsing the audit log.\nError: {e}")
-                        # Read Signature
-                    try:
-                        offset = self.__parse_signature(offset)
-                    except Exception as e:
-                        logger.exception(f"Error in parsing the signature.\nError: {e}")
-            
-            readSuccess = True
+        if self.asdFileVersion >= 6:
+            try:
+                # Read Classifier Data
+                offset = self.__parse_classifierData(offset)
+            except Exception as e:
+                logger.exception(f"Error in parsing the classifier data.\nError: {e}")
+            else:    
+                try:
+                    offset = self.__parse_dependentVariables(offset)
+                except Exception as e:
+                    logger.exception(f"Error in parsing the depndant variables.\nError: {e}")
+        if self.asdFileVersion >= 7:
+            try:
+                # Read Calibration Header
+                offset = self.__parse_calibrationHeader(offset)
+            except Exception as e:
+                logger.exception(f"Error in parsing the calibration header.\nError: {e}")
+            else:
+                try:
+                    if self.calibrationHeader and (self.calibrationHeader.calibrationNum > 0):
+                        # Parsing the calibration data according to 'ASD File Format version 8: Revision B', through the suquence of 'Absolute Calibration Data', 'Base Calibration Data', 'Lamp Calibration Data', 'Fiber Optic Data' successively.
+                        for hdr in self.calibrationHeader.calibrationSeries:  # Number of calibrationSeries buffers in the file.
+                            if hdr[0] == 0:
+                                self.calibrationSeriesABS, _, _, offset = self.__parse_spectra(offset)
+                            elif hdr[0] == 1:
+                                self.calibrationSeriesBSE, _, _, offset = self.__parse_spectra(offset)
+                            elif hdr[0] == 2:
+                                self.calibrationSeriesLMP, _, _, offset = self.__parse_spectra(offset)
+                            elif hdr[0] == 3:
+                                self.calibrationSeriesFO, _, _, offset = self.__parse_spectra(offset)
+                    # else:
+                    #     logger.info(f"Calibration data is not available.")
+                except Exception as e:
+                    logger.exception(f"Error in parsing the calibration data.\nError: {e}")       
+        if self.asdFileVersion >= 8:
+            try:
+                # Read Audit Log
+                offset = self.__parse_auditLog(offset)
+            except Exception as e:
+                logger.exception(f"Error in parsing the audit log.\nError: {e}")
+                # Read Signature
+            else:
+                try:
+                    offset = self.__parse_signature(offset)
+                except Exception as e:
+                    logger.exception(f"Error in parsing the signature.\nError: {e}")
+        readSuccess = True
         return readSuccess
 
     def update(self, field_name: str, new_value):
         if self.metadata is not None:
             if not hasattr(self.metadata, field_name):
                 raise ValueError(f"{field_name} is not vaild filed in {type(self.metadata).__name__} .")
-            
             self.metadata = self.metadata._replace(**{field_name: new_value})
-
         if field_name in ['channel1Wavelength', 'channels', 'wavelengthStep']:
-            self.__wavelengths = np.arange(
-                self.metadata.channel1Wavelength,
-                self.metadata.channel1Wavelength + self.metadata.channels * self.metadata.wavelengthStep,
-                self.metadata.wavelengthStep
-            )
+            self.__wavelengths = np.arange(self.metadata.channel1Wavelength, self.metadata.channel1Wavelength + self.metadata.channels * self.metadata.wavelengthStep, self.metadata.wavelengthStep)
         
     def write(self, file: str):
-
         if os.path.exists(file):
             try:
                 os.remove(file)
             except OSError as e:
                 logger.exception(f"File remove error:\n{file} : {e}")
-
         with open(file, 'wb') as fileHandle:
             if self.asdFileVersion > 0:        
                 asdFileVersionBytes, offset = self.__setFileVersion()
                 fileHandle.write(asdFileVersionBytes)
-            if self.metadata:
-                metadataBytes, byteLength = self.__wrap_metadata()
-                offset += byteLength
-                fileHandle.write(metadataBytes)
-                # logger.info(f"Write: Metadata offset: {offset}")
-            if self.spectrumData:
-                spectrumDataBytes, byteLength = self.__wrap_spectrumData()
-                offset += byteLength
-                fileHandle.write(spectrumDataBytes)
-                # logger.info(f"Write: Spectrum Data offset: {offset}")
-                if self.asdFileVersion >= 2:        
-                    if self.referenceFileHeader:
-                        referenceFileHeaderBytes, byteLength = self.__wrap_referenceFileHeader()
-                        offset = offset + byteLength
-                        fileHandle.write(referenceFileHeaderBytes)
-                        # logger.info(f"Write: Reference File Header offset: {offset}")
-                    if self.referenceData:
-                        referenceDataBytes, byteLength = self.__wrap_referenceData()
-                        fileHandle.write(referenceDataBytes)
-                        offset = offset + byteLength
-                        # logger.info(f"Write: Reference Data offset: {offset}")
-                    if self.classifierData:
-                        classifierDataBytes, byteLength = self.__wrap_classifierData()
-                        fileHandle.write(classifierDataBytes)
-                        offset = offset + byteLength
-                        # logger.info(f"Write: Classifier Data offset: {offset}")
-                    if self.dependants:
-                        dependantsByteStream, byteLength = self.__wrap_dependentVariables()
-                        offset = offset + byteLength
-                        fileHandle.write(dependantsByteStream)
-                        # logger.info(f"Write: Dependants write offset: {offset}")
-                    if self.asdFileVersion >= 7:
-                        if self.calibrationHeader:
-                            calibrationHeadersBytes, byteLength = self.__wrap_calibrationHeader()
+                if self.metadata:
+                    metadataBytes, byteLength = self.__wrap_metadata()
+                    offset += byteLength
+                    fileHandle.write(metadataBytes)
+                    # logger.info(f"Write: Metadata offset: {offset}")
+                if self.spectrumData:
+                    spectrumDataBytes, byteLength = self.__wrap_spectrumData()
+                    offset += byteLength
+                    fileHandle.write(spectrumDataBytes)
+                    # logger.info(f"Write: Spectrum Data offset: {offset}")
+            if self.asdFileVersion >= 2:        
+                if self.referenceFileHeader:
+                    referenceFileHeaderBytes, byteLength = self.__wrap_referenceFileHeader()
+                    offset = offset + byteLength
+                    fileHandle.write(referenceFileHeaderBytes)
+                    # logger.info(f"Write: Reference File Header offset: {offset}")
+                if self.referenceData:
+                    referenceDataBytes, byteLength = self.__wrap_referenceData()
+                    fileHandle.write(referenceDataBytes)
+                    offset = offset + byteLength
+                    # logger.info(f"Write: Reference Data offset: {offset}")
+                if self.classifierData:
+                    classifierDataBytes, byteLength = self.__wrap_classifierData()
+                    fileHandle.write(classifierDataBytes)
+                    offset = offset + byteLength
+                    # logger.info(f"Write: Classifier Data offset: {offset}")
+                if self.dependants:
+                    dependantsByteStream, byteLength = self.__wrap_dependentVariables()
+                    offset = offset + byteLength
+                    fileHandle.write(dependantsByteStream)
+                    # logger.info(f"Write: Dependants write offset: {offset}")
+            if self.asdFileVersion >= 7:
+                if self.calibrationHeader:
+                    calibrationHeadersBytes, byteLength = self.__wrap_calibrationHeader()
+                    offset = offset + byteLength
+                    fileHandle.write(calibrationHeadersBytes)
+                    # logger.info(f"Write: Calibration Header write offset: {offset}")
+                if self.calibrationHeader and self.calibrationHeader.calibrationNum > 0:
+                    for i in range(self.calibrationHeader.calibrationNum):
+                        if self.calibrationHeader.calibrationSeries[i][0] == 0:
+                            calibrationSeriesABSBytes, byteLength = self.__wrap_spectra(self.calibrationSeriesABS)
                             offset = offset + byteLength
-                            fileHandle.write(calibrationHeadersBytes)
-                            # logger.info(f"Write: Calibration Header write offset: {offset}")
-                        if self.calibrationHeader and self.calibrationHeader.calibrationNum > 0:
-                            for i in range(self.calibrationHeader.calibrationNum):
-                                if self.calibrationHeader.calibrationSeries[i][0] == 0:
-                                    calibrationSeriesABSBytes, byteLength = self.__wrap_spectra(self.calibrationSeriesABS)
-                                    offset = offset + byteLength
-                                    fileHandle.write(calibrationSeriesABSBytes)
-                                    # logger.info(f"Write: Calibration Series ABS write offset: {offset}")
-                                elif self.calibrationHeader.calibrationSeries[i][0] == 1:
-                                    calibrationSeriesBSEBytes, byteLength = self.__wrap_spectra(self.calibrationSeriesBSE)
-                                    offset = offset + byteLength
-                                    fileHandle.write(calibrationSeriesBSEBytes)
-                                    # logger.info(f"Write: Calibration Series BSE write offset: {offset}")
-                                elif self.calibrationHeader.calibrationSeries[i][0] == 2:
-                                    calibrationSeriesLMPBytes, byteLength = self.__wrap_spectra(self.calibrationSeriesLMP)
-                                    offset = offset + byteLength
-                                    fileHandle.write(calibrationSeriesLMPBytes)
-                                    # logger.info(f"Write: Calibration Series LMP write offset: {offset}")
-                                elif self.calibrationHeader.calibrationSeries[i][0] == 3:
-                                    calibrationSeriesFOBytes, byteLength = self.__wrap_spectra(self.calibrationSeriesFO)
-                                    offset = offset + byteLength
-                                    fileHandle.write(calibrationSeriesFOBytes)
-                                    # logger.info(f"Write: Calibration Series FO write offset: {offset}")      
-                        if self.asdFileVersion >= 8:
-                            auditLogBytes, byteLength = self.__wrap_auditLog()
-                            fileHandle.write(auditLogBytes)
-                            offset = offset + len(auditLogBytes)
-                            # logger.info(f"Write: Audit Log Header write offset: {offset}")
-                            signatureBytes, byteLength = self.__wrap_signature()
-                            fileHandle.write(signatureBytes)
-                            offset = offset + len(signatureBytes)
-                            # logger.info(f"Write: Signature Header write offset: {offset}")
-
+                            fileHandle.write(calibrationSeriesABSBytes)
+                            # logger.info(f"Write: Calibration Series ABS write offset: {offset}")
+                        elif self.calibrationHeader.calibrationSeries[i][0] == 1:
+                            calibrationSeriesBSEBytes, byteLength = self.__wrap_spectra(self.calibrationSeriesBSE)
+                            offset = offset + byteLength
+                            fileHandle.write(calibrationSeriesBSEBytes)
+                            # logger.info(f"Write: Calibration Series BSE write offset: {offset}")
+                        elif self.calibrationHeader.calibrationSeries[i][0] == 2:
+                            calibrationSeriesLMPBytes, byteLength = self.__wrap_spectra(self.calibrationSeriesLMP)
+                            offset = offset + byteLength
+                            fileHandle.write(calibrationSeriesLMPBytes)
+                            # logger.info(f"Write: Calibration Series LMP write offset: {offset}")
+                        elif self.calibrationHeader.calibrationSeries[i][0] == 3:
+                            calibrationSeriesFOBytes, byteLength = self.__wrap_spectra(self.calibrationSeriesFO)
+                            offset = offset + byteLength
+                            fileHandle.write(calibrationSeriesFOBytes)
+                            # logger.info(f"Write: Calibration Series FO write offset: {offset}")      
+            if self.asdFileVersion >= 8:
+                auditLogBytes, byteLength = self.__wrap_auditLog()
+                fileHandle.write(auditLogBytes)
+                offset = offset + len(auditLogBytes)
+                # logger.info(f"Write: Audit Log Header write offset: {offset}")
+                signatureBytes, byteLength = self.__wrap_signature()
+                fileHandle.write(signatureBytes)
+                offset = offset + len(signatureBytes)
+                # logger.info(f"Write: Signature Header write offset: {offset}")
             if self.__bom:
                 fileHandle.write(self.__bom)
             # logger.info(f"{file} write success")
-
         return True
 
     def __check_offset(func):
@@ -268,7 +257,6 @@ class ASDFile(object):
     
     @__check_offset
     def __parse_metadata(self, offset):
-
         asdMetadataFormat = '<157s 18s b b b b l b l f f b b b b b H 128s 56s L h h H H f f f f h b 4b H H H b L H H H H f f 27s 5b'
         asdMetadatainfo = namedtuple('metadata', "comments when daylighSavingsFlag programVersion fileVersion iTime \
         darkCorrected darkTime dataType referenceTime channel1Wavelength wavelengthStep dataFormat \
@@ -277,7 +265,6 @@ class ASDFile(object):
         ipNumBits xMode flags1 flags2 flags3 flags4 darkCurrentCount refCount sampleCount instrument \
         calBulbID swir1Gain swir2Gain swir1Offset swir2Offset splice1_wavelength splice2_wavelength smartDetectorType \
         spare1 spare2 spare3 spare4 spare5 byteStream byteStreamLength")
-
         try:
             comments, when, programVersion, fileVersion, iTime, darkCorrected, darkTime, \
             dataType, referenceTime, channel1Wavelength, wavelengthStep, dataFormat, old_darkCurrentCount, old_refCount, old_sampleCount, \
@@ -286,7 +273,6 @@ class ASDFile(object):
             sampleCount, instrument, calBulbID, swir1Gain, swir2Gain, swir1Offset, swir2Offset, \
             splice1_wavelength, splice2_wavelength, smartDetectorType, \
             spare1, spare2, spare3, spare4, spare5 = struct.unpack_from(asdMetadataFormat, self.__asdFileStream, offset)
-
             comments = comments.strip(b'\x00') # remove null bytes
             # Parse the time from the buffer, format is year, month, day, hour, minute, second
             when_datetime, daylighSavingsFlag = self.__parse_ASDFilewhen((struct.unpack_from('9h', when)))  # 9 short integers
@@ -882,58 +868,42 @@ class ASDFile(object):
         except Exception as e:
             logger.exception(f"Audit Event wrap error: {e}")
             return None, None
-
-
-    def __getattr__(self, item):
-        if item == 'reflectance':
-            return self.get_reflectance()
-        elif item == 'radiance':
-            return self.get_radiance()
-        elif item == 'white_reference':
-            return self.get_white_reference()
-        elif item == 'raw':
-            return self.spectrumData
-        elif item == 'ref':
-            return self.reference
-        else:
+        
+    def __parse_auditLogEvent(self, event: str) -> namedtuple:
+        try:
+            auditInfo = namedtuple('event', 'application appVersion name login time source function notes')
+            root = ET.fromstring(event)
+            application = root.find('Audit_Application').text
+            appVersion = root.find('Audit_AppVersion').text
+            name = root.find('Audit_Name').text
+            login = root.find('Audit_Login').text
+            time = root.find('Audit_Time').text
+            source = root.find('Audit_Source').text
+            function = root.find('Audit_Function').text
+            notes = root.find('Audit_Notes').text
+            auditEvent_tuple = auditInfo._make((application, appVersion, name, login, time, source, function, notes))
+            return auditEvent_tuple
+        except Exception as e:
+            logger.exception(f"Audit Log Data parse error: {e}")
             return None
 
-    @property
-    def reflectance(self):
-        # if self.asdFileVersion >= 2:
-        #     if self.metadata.referenceTime > 0:
-
-        if spectra_type[self.metadata.dataType] == 'REF':
-            res = self.__normalise_spectrum(self.spectrumData, self.metadata) / self.__normalise_spectrum(self.reference, self.metadata)
-        else:
-            raise TypeError('spectral data contains {}. REF data is needed'.format(spectra_type[self.metadata.dataType]))
-        return res
-
-    def get_radiance(self):
-        if spectra_type[self.metadata.dataType] == 'RAD':
-            res = self.calibrationSeries_lamp * self.reference * self.spectrumData * self.metadata.intergrationTime_ms / \
-                  (self.calibrationSeries_base *500 *544* np.pi)
-
-            #res = normalise_spectrum(self.spectrumData, self.metadata)
-        else:
-            raise TypeError('spectral data contains {}. RAD data is needed'.format(spectra_type[self.metadata.dataType]))
-        return res
-
-    def __normalise_spectrum(self, spec, metadata):
-        res = spec.copy()
-
-        splice1_index = int(metadata.splice1_wavelength)
-        splice2_index = int(metadata.splice2_wavelength)
-
-        res[:splice1_index] = spec[:splice1_index] / metadata.intergrationTime_ms
-
-        res[splice1_index:splice2_index] = spec[
-                                        splice1_index:splice2_index] * metadata.swir1Gain / 2048
-        res[splice2_index:] = spec[splice2_index:] * metadata.swir1Gain / 2048
-        return res
-        # spec[idx1] < - spec[idx1] / metadata$it
-        # spec[idx2] < - spec[idx2] * metadata$swir1Gain / 2048
-        # spec[idx3] < - spec[idx3] * metadata$swir2Gain / 2048
+    def __wrap_auditLogEvent(self, event: namedtuple) -> str:
+        try:
+            doc = ET.Element('Audit_Event')
+            ET.SubElement(doc, 'Audit_Application').text = event.application
+            ET.SubElement(doc, 'Audit_AppVersion').text = event.appVersion
+            ET.SubElement(doc, 'Audit_Name').text = event.name
+            ET.SubElement(doc, 'Audit_Login').text = event.login
+            ET.SubElement(doc, 'Audit_Time').text = event.time
+            ET.SubElement(doc, 'Audit_Source').text = event.source
+            ET.SubElement(doc, 'Audit_Function').text = event.function
+            ET.SubElement(doc, 'Audit_Notes').text = event.notes
+            auditEvent_xml_xtr = ET.tostring(doc, encoding='utf-8')
+            # logger.info(f"Generated XML: {auditEvent_xml_xtr}")
+            return auditEvent_xml_xtr
+        except Exception as e:
+            logger.error(f"Error generating XML: {e}")
+            return None
 
     def __validate_fileVersion(self) -> int:
         try:
@@ -962,15 +932,15 @@ class ASDFile(object):
 
     # Parse the storage time through 9 short integers and store it as a datetime type
     def __parse_ASDFilewhen(self, when):
-        seconds = when[0]           # // seconds [0,61]
-        minutes = when[1]           # // minutes [0,59]
-        hour = when[2]              # // hour [0,23]
-        day = when[3]               # // day of the month [1,31]
-        month = when[4]             # // month of year [0,11]
-        year = when[5]              # // years since 1900
-        weekDay = when[6]           # // day of week [0,6] (Sunday = 0)
-        daysInYear = when[7]        # // day of year [0,365]
-        daylighSavingsFlag = when[8]  # // daylight savings flag
+        seconds = when[0]               # // seconds [0,61]
+        minutes = when[1]               # // minutes [0,59]
+        hour = when[2]                  # // hour [0,23]
+        day = when[3]                   # // day of the month [1,31]
+        month = when[4]                 # // month of year [0,11]
+        year = when[5]                  # // years since 1900
+        weekDay = when[6]               # // day of week [0,6] (Sunday = 0)
+        daysInYear = when[7]            # // day of year [0,365]
+        daylighSavingsFlag = when[8]    # // daylight savings flag
         if year < 1900:
             year = year + 1900
         date_datetime = datetime.datetime(year, month + 1, day, hour, minutes, seconds)
@@ -985,9 +955,9 @@ class ASDFile(object):
         year = when.year
         if year >= 1900:
             year = when.year - 1900
-        weekDay = (when.weekday() + 1) % 7   # // day of week [0,6] (Sunday = 0)
-        daysInYear = (when.date() - datetime.date(when.year, 1, 1)).days    # // day of year [0,365]
-        daylighSavingsFlag = isDaylightSaving    # // daylight savings flag
+        weekDay = (when.weekday() + 1) % 7
+        daysInYear = (when.date() - datetime.date(when.year, 1, 1)).days
+        daylighSavingsFlag = isDaylightSaving
         byteStream = struct.pack('9h', seconds, minutes, hour, day, month, year, weekDay, daysInYear, daylighSavingsFlag)
         return byteStream
     
@@ -1032,46 +1002,114 @@ class ASDFile(object):
         except Exception as e:
             logger.exception(f"Smart Detector wrap error: {e}")
             return None
-        
-    def __parse_auditLogEvent(self, event: str) -> namedtuple:
-        try:
-            auditInfo = namedtuple('event', 'application appVersion name login time source function notes')
-            root = ET.fromstring(event)
-            application = root.find('Audit_Application').text
-            appVersion = root.find('Audit_AppVersion').text
-            name = root.find('Audit_Name').text
-            login = root.find('Audit_Login').text
-            time = root.find('Audit_Time').text
-            source = root.find('Audit_Source').text
-            function = root.find('Audit_Function').text
-            notes = root.find('Audit_Notes').text
 
-            auditEvent_tuple = auditInfo._make((application, appVersion, name, login, time, source, function, notes))
-            return auditEvent_tuple
-        except Exception as e:
-            logger.exception(f"Audit Log Data parse error: {e}")
+    def __getattr__(self, item):
+        if item == 'reflectance':
+            return self.get_reflectance()
+        elif item == 'radiance':
+            return self.get_radiance()
+        elif item == 'white_reference':
+            return self.get_white_reference()
+        elif item == 'raw':
+            return self.spectrumData
+        elif item == 'ref':
+            return self.reference
+        else:
             return None
 
-    def __wrap_auditLogEvent(self, event: namedtuple) -> str:
+    @property
+    def reflectance(self):
+        # if self.asdFileVersion >= 2:
+        #     if self.metadata.referenceTime > 0:
 
-        try:
-            doc = ET.Element('Audit_Event')
-            ET.SubElement(doc, 'Audit_Application').text = event.application
-            ET.SubElement(doc, 'Audit_AppVersion').text = event.appVersion
-            ET.SubElement(doc, 'Audit_Name').text = event.name
-            ET.SubElement(doc, 'Audit_Login').text = event.login
-            ET.SubElement(doc, 'Audit_Time').text = event.time
-            ET.SubElement(doc, 'Audit_Source').text = event.source
-            ET.SubElement(doc, 'Audit_Function').text = event.function
-            ET.SubElement(doc, 'Audit_Notes').text = event.notes
+        if spectra_type[self.metadata.dataType] == 'REF':
+            res = self.__normalise_spectrum(self.spectrumData, self.metadata) / self.__normalise_spectrum(self.reference, self.metadata)
+        else:
+            raise TypeError('spectral data contains {}. REF data is needed'.format(spectra_type[self.metadata.dataType]))
+        return res
+    
+    @property
+    def radiance(self):
+        if spectra_type[self.metadata.dataType] == 'RAD':
+            res = self.calibrationSeries_lamp * self.reference * self.spectrumData * self.metadata.intergrationTime_ms / \
+                  (self.calibrationSeries_base *500 *544* np.pi)
 
-            auditEvent_xml_xtr = ET.tostring(doc, encoding='utf-8')
-            # logger.info(f"Generated XML: {auditEvent_xml_xtr}")
+            #res = normalise_spectrum(self.spectrumData, self.metadata)
+        else:
+            raise TypeError('spectral data contains {}. RAD data is needed'.format(spectra_type[self.metadata.dataType]))
+        return res
 
-            return auditEvent_xml_xtr
-        except Exception as e:
-            logger.error(f"Error generating XML: {e}")
-            return None
+    @property
+    def __normalise_spectrum(self, spec, metadata):
+        res = spec.copy()
+        splice1_index = int(metadata.splice1_wavelength)
+        splice2_index = int(metadata.splice2_wavelength)
+        res[:splice1_index] = spec[:splice1_index] / metadata.intergrationTime_ms
+        res[splice1_index:splice2_index] = spec[splice1_index:splice2_index] * metadata.swir1Gain / 2048
+        res[splice2_index:] = spec[splice2_index:] * metadata.swir1Gain / 2048
+        return res
+        # spec[idx1] < - spec[idx1] / metadata$it
+        # spec[idx2] < - spec[idx2] * metadata$swir1Gain / 2048
+        # spec[idx3] < - spec[idx3] * metadata$swir2Gain / 2048
+
+    @property
+    def derivative(self):
+        pass
+
+    @property
+    def absoluteReflectance(self):
+        pass
+
+    @property
+    def reflectanceNoDeriv(self):
+        pass
+
+    @property
+    def reflectance1stDeriv(self):
+        pass
+
+    @property
+    def reflectance2ndDeriv(self):
+        pass
+
+    @property
+    def log1r(self):
+        pass
+
+    @property
+    def log1RNoDeriv(self):
+        pass
+
+    @property
+    def log1R1stDeriv(self):
+        pass
+
+    @property
+    def log1R2ndDeriv(self):
+        pass
+
+# DN
+# Reflectance (Transmittance)
+# Absolute Reflectance
+# Radiometric Calculation
+# Log 1/R (Log 1/T)
+# 1st Derivative
+# 2nd Derivative
+# Parabolic Correction
+# Splice Correction
+# Lambda Integration
+# Quantum lntensity
+# Interpolate
+# Statistics
+# NEDL
+# ASCll Export
+# Import Ascii X,Y
+# JCAMP-DX Export
+# Bran+Luebbe
+# Colorimetry..
+# GPS Log
+# Convex Hull
+# Custom...
 
 # define logger
 logging.basicConfig(
