@@ -21,22 +21,21 @@ import xml.etree.ElementTree as ET
 from collections import namedtuple
 
 
-spectra_type = ('RAW', 'REF', 'RAD', 'NOUNITS', 'IRRAD', 'QI', 'TRANS', 'UNKNOWN', 'ABS')   # metadata.dataType, offset = 186: 0 = raw, 1 = reflectance, 2 = radiance, 3 = no units, 4 = irradiance, 5 = quality index, 6 = transmittance, 7 = unknown, 8 = absorbance
-data_type = ('FLOAT', 'INTEGER', 'DOUBLE', 'UNKNOWN')       # Spectrum data format (variable data_format at byte offset 199): 0 = float, 1 = integer, 2 = double, 3 = unknown
-instrument_type = ('UNKNOWN', 'PSII', 'LSVNIR', 'FSVNIR', 'FSFR', 'FSNIR', 'CHEM', 'FSFR_UNATTENDED',)  # Instrument type that created spectrum (variable instrument at byte offset 431): 0 = unknown, 1 = PSII, 2 = LSVNIR, 3 = FSVNIR, 4 = FSFR, 5 = FSNIR, 6 = CHEM, 7 = FSFR_UNATTENDED
-
 # ASD File constants
-
 # ASD File verions
 version_dict = { "Invalid": 0, "ASD": 1, "as2": 2, "as3": 3, "as4": 4, "as5": 5, "as6": 6, "as7": 7, "as8": 8}
+spectraType_dict = {"Raw": 0, "Reflectance": 1, "Radiance": 2, "No Units": 3, "Irradiance": 4, "Quality Index": 5, "Transmittance": 6, "Unknown": 7, "Absorbance": 8}       # metadata.dataType, at bytes offset = 186
+dataType_dict = {"Float": 0, "Integer": 1, "Double": 2, "Unknown": 3}       # metadata.dataFormat: Spectrum data format, at byte offset 199
+instrumentType_dict = {"UNKNOWN_INSTRUMENT": 0, "PSII_INSTRUMENT": 1, "LSVNIR_INSTRUMENT": 2, "FSVNIR_INSTRUMENT": 3, "FSFR_INSTRUMENT": 4, "FSNIR_INSTRUMENT": 5, "CHEM_INSTRUMENT": 6, "LAB_SPEC_PRO": 7, "HAND_HELD_INSTRUMENT": 10}      # metadata.instrument: Instrument type that created spectrum, at byte offset 431
+
 # auditLog
 audit_dict = {}
 
 # ClassifierData
-classifierData_type = {'SAM', 'GALACTIC', 'CAMOPREDICT', 'CAMOCLASSIFY', 'PCAZ', 'INFOMETRIx'}  # classifierData.modelType, offset = Reference Data size + 1, 0 = SAM, 1 = GALACTIC, 2 = CAMOPREDICT, 3 = CAMOCLASSIFY, 4 = PCAZ, 5 = INFOMETRIx
+classifierDataType_dict = {"SAM": 0 , "GALACTIC": 1, "CAMOPREDICT": 2, "CAMOCLASSIFY": 3, "PCAZ": 4, "INFOMETRIx": 5}  # classifierData.modelType
 
 # CalibrationHeader
-calibrationType_dict = {"ABSOLUTE": 0, "BASE": 1, "LAMP": 2, "FIBER": 3}    # calibrationSeries.calibrationType, 0 = ABSOLUTE, 1 = BASE, 2 = LAMP, 3 = FIBER 
+calibrationType_dict = {"ABSOLUTE": 0, "BASE": 1, "LAMP": 2, "FIBER": 3}    # calibrationSeries.calibrationType
 # ABS, Absolute Reflectance File; BSE, Base File; LMP, Lamp File; FO, Fiber Optic File
 
 flag1_vnir_saturation = 1
@@ -44,11 +43,11 @@ flag1_swir1_saturation = 2
 flag1_swir2_saturation = 4
 Tec1_alarm = 8
 Tec2_alarm = 16
-# // Vnir Saturation    0 0 0 0  0 0 0 1   0x01
-# // Swir1 Saturation   0 0 0 0  0 0 1 0   0x02
-# // Swir2 Saturation   0 0 0 0  0 1 0 0   0x04
-# // Swir1 Tec Alarm    0 0 0 0  1 0 0 0   0x08
-# // Swir2 Tec Alarm    0 0 0 1  0 0 0 0   0x16
+# Vnir Saturation    0 0 0 0  0 0 0 1   0x01
+# Swir1 Saturation   0 0 0 0  0 0 1 0   0x02
+# Swir2 Saturation   0 0 0 0  0 1 0 0   0x04
+# Swir1 Tec Alarm    0 0 0 0  1 0 0 0   0x08
+# Swir2 Tec Alarm    0 0 0 1  0 0 0 0   0x16
 
 
 class ASDFile(object):
@@ -71,7 +70,7 @@ class ASDFile(object):
         self.__asdFileStream = None
         self.__wavelengths = None
 
-    def read(self: object, filePath: str):
+    def read(self: object, filePath: str) -> bool:
         readSuccess = False
         if os.path.exists(filePath) and os.path.isfile(filePath):
             try:
@@ -156,6 +155,8 @@ class ASDFile(object):
         return readSuccess
 
     def update(self, field_name: str, new_value):
+        # TODO: Add the update method to update the fields.
+        # TODO: new_vulue should be the same type as the field.
         if self.metadata is not None:
             if not hasattr(self.metadata, field_name):
                 raise ValueError(f"{field_name} is not vaild filed in {type(self.metadata).__name__} .")
@@ -163,7 +164,7 @@ class ASDFile(object):
         if field_name in ['channel1Wavelength', 'channels', 'wavelengthStep']:
             self.__wavelengths = np.arange(self.metadata.channel1Wavelength, self.metadata.channel1Wavelength + self.metadata.channels * self.metadata.wavelengthStep, self.metadata.wavelengthStep)
         
-    def write(self, file: str):
+    def write(self: object, file: str) -> bool:
         if os.path.exists(file):
             try:
                 os.remove(file)
@@ -251,12 +252,12 @@ class ASDFile(object):
             if offset is not None and offset < len(self.__asdFileStream):
                 return func(self, offset, *args, **kwargs)
             else:
-                logger.info("Reached the end of the binary byte stream.")
+                logger.info("Reached the end of the binary byte stream. offset: {offset}")
                 return None, None
         return wrapper
     
     @__check_offset
-    def __parse_metadata(self, offset):
+    def __parse_metadata(self: object, offset: int) -> int:
         asdMetadataFormat = '<157s 18s b b b b l b l f f b b b b b H 128s 56s L h h H H f f f f h b 4b H H H b L H H H H f f 27s 5b'
         asdMetadatainfo = namedtuple('metadata', "comments when daylighSavingsFlag programVersion fileVersion iTime \
         darkCorrected darkTime dataType referenceTime channel1Wavelength wavelengthStep dataFormat \
@@ -295,7 +296,7 @@ class ASDFile(object):
         # logger.info(f"Read: metadata end offset: {offset}")
         return offset
     
-    def __wrap_metadata(self):
+    def __wrap_metadata(self: object) -> tuple[bytes, int]:
         asdMetadataFormat = '<157s 18s b b b b l b l f f b b b b b H 128s 56s L h h H H f f f f h b 4b H H H b L H H H H f f 27s 5b'
         try:
             byteStream = struct.pack(
@@ -359,10 +360,10 @@ class ASDFile(object):
                 return None, None
         except Exception as e:
             logger.exception(f"Metadata (ASD File Header) wrap error: {e}")
-            return None
+            return False
         
     @__check_offset
-    def __parse_spectrumData(self, offset):
+    def __parse_spectrumData(self: object, offset: int) -> int:
         try:
             spectrumDataInfo = namedtuple('spectrumData', 'spectra byteStream byteStreamLength')
             spectra, spectrumDataStream, spectrumDataStreamLength, offset = self.__parse_spectra(offset)
@@ -373,7 +374,7 @@ class ASDFile(object):
             logger.exception(f"Spectrum Data parse error: {e}")
             return None
     
-    def __wrap_spectrumData(self):
+    def __wrap_spectrumData(self: object) -> tuple[bytes, int]:
         try:
             byteStream, byteStreamLength = self.__wrap_spectra(self.spectrumData.spectra)
             return byteStream, byteStreamLength
@@ -382,7 +383,7 @@ class ASDFile(object):
             return None, None
 
     @__check_offset
-    def __parse_referenceFileHeader(self, offset):
+    def __parse_referenceFileHeader(self: object, offset: int) -> int:
         initOffset = offset
         asdReferenceFormat = 'q q'
         asdreferenceFileHeaderInfo = namedtuple('referenceFileHeader', "referenceFlag referenceTime spectrumTime referenceDescription byteStream byteStreamLength")
@@ -400,7 +401,7 @@ class ASDFile(object):
             logger.exception(f"Reference File Header parse error: {e}")
             return None
     
-    def __wrap_referenceFileHeader(self):
+    def __wrap_referenceFileHeader(self: object) -> tuple[bytes, int]:
         try:
             referenceFlagBytes, byteStreamLength = self.__wrap_Bool(self.referenceFileHeader.referenceFlag)
             asdReferenceFormat = 'q q'
@@ -415,7 +416,7 @@ class ASDFile(object):
             return None, None
 
     @__check_offset
-    def __parse_referenceData(self, offset):
+    def __parse_referenceData(self: object, offset: int) -> int:
         try:
             referenceDataInfo = namedtuple('referenceData', 'spectra byteStream byteStreamLength')
             spectra, referenceDataStream, referenceDataStreamLength, offset = self.__parse_spectra(offset)
@@ -426,7 +427,7 @@ class ASDFile(object):
             logger.exception(f"Reference Data parse error: {e}")
             return None
     
-    def __wrap_referenceData(self):
+    def __wrap_referenceData(self: object) -> tuple[bytes, int]:
         try:
             byteStream, byteStreamLength = self.__wrap_spectra(self.referenceData.spectra)
             return byteStream, byteStreamLength
@@ -435,7 +436,7 @@ class ASDFile(object):
             return None, None
 
     @__check_offset
-    def __parse_classifierData(self, offset):
+    def __parse_classifierData(self: object, offset: int) -> int:
         try:
             initOffset = offset
             yCode, yModelType = struct.unpack_from('bb', self.__asdFileStream, offset)
@@ -484,7 +485,7 @@ class ASDFile(object):
             logger.exception(f"classifier Data parse error: {e}")
             return None
 
-    def __wrap_classifierData(self):
+    def __wrap_classifierData(self: object) -> tuple[bytes, int]:
         try:
             calssifierData_1 = struct.pack('bb', self.classifierData.yCode, self.classifierData.yModelType)
             title_bstr, _ = self.__wrap_bstr(self.classifierData.title)
@@ -521,15 +522,15 @@ class ASDFile(object):
                     constituantByteStream += item_packed
             if self.classifierData.constituantCount == 0:
                 constituantByteStream += b'\x00\x00'
-            classifierDataByteStream = calssifierData_1 + title_bstr + subtitle_bstr + productName_bstr + vendor_bstr + lotNumber_bstr + sample_bstr + modelName_bstr + operator_bstr + dateTime_bstr + instrument_bstr + serialNumber_bstr + displayMode_bstr + comments_bstr + units_bstr + filename_bstr + username_bstr + reserved1_bstr + reserved2_bstr + reserved3_bstr + reserved4_bstr + constituantCount_bstr + constituantByteStream
-            byteStreamLength = len(classifierDataByteStream)
-            return classifierDataByteStream, byteStreamLength
+            ByteStream = calssifierData_1 + title_bstr + subtitle_bstr + productName_bstr + vendor_bstr + lotNumber_bstr + sample_bstr + modelName_bstr + operator_bstr + dateTime_bstr + instrument_bstr + serialNumber_bstr + displayMode_bstr + comments_bstr + units_bstr + filename_bstr + username_bstr + reserved1_bstr + reserved2_bstr + reserved3_bstr + reserved4_bstr + constituantCount_bstr + constituantByteStream
+            byteStreamLength = len(ByteStream)
+            return ByteStream, byteStreamLength
         except Exception as e:
             logger.exception(f"Classifier Data wrap error: {e}")
             return None, None
 
     @__check_offset
-    def __parse_dependentVariables(self, offset):
+    def __parse_dependentVariables(self: object, offset: int) -> int:
         try:
             initOffset = offset
             dependantInfo = namedtuple('dependants', 'saveDependentVariables dependentVariableCount dependentVariableLabels dependentVariableValue byteStream byteStreamLength')
@@ -560,7 +561,7 @@ class ASDFile(object):
             logger.exception(f"Dependant variables parse error: {e}")
             return None
     
-    def __wrap_dependentVariables(self):
+    def __wrap_dependentVariables(self: object) -> tuple[bytes, int]:
         try:
             byteStream, _ = self.__wrap_Bool(self.dependants.saveDependentVariables)
             dependant_format = 'h'
@@ -594,7 +595,7 @@ class ASDFile(object):
             return None, None
 
     @__check_offset
-    def __parse_calibrationHeader(self, offset):
+    def __parse_calibrationHeader(self: object, offset: int) -> int:
         try:
             calibrationHeaderCountNum_format = 'b'
             calibrationSeries_buffer_format = '<b 20s i h h'
@@ -619,7 +620,7 @@ class ASDFile(object):
             logger.exception(f"Calibration Header parse error: {e}")
             return None
     
-    def __wrap_calibrationHeader(self):
+    def __wrap_calibrationHeader(self: object) -> tuple[bytes, int]:
         try:
             calibrationHeaderCountNum_format = 'b'
             calibrationSeries_buffer_format = '<b 20s i h h'
@@ -637,7 +638,7 @@ class ASDFile(object):
             return None, None
 
     @__check_offset
-    def __parse_auditLog(self, offset):
+    def __parse_auditLog(self: object, offset: int) -> int:
         try:
             initOffset = offset
             auditLogInfo = namedtuple('auditLog', 'auditCount auditEvents byteStream byteStreamLength')
@@ -654,7 +655,7 @@ class ASDFile(object):
             logger.exception(f"Audit Log Header parse error: {e}")
             return None
     
-    def __wrap_auditLog(self):
+    def __wrap_auditLog(self: object) -> tuple[bytes, int]:
         try:
             byteStream = struct.pack('l', self.auditLog.auditCount)
             auditBytes = b''
@@ -672,7 +673,7 @@ class ASDFile(object):
             return None, None
 
     @__check_offset
-    def __parse_signature(self, offset):
+    def __parse_signature(self: object, offset: int) -> int:
         try:
             initOffset = offset
             signatureInfo = namedtuple('signature', 'signed, signatureTime, userDomain, userLogin, userName, source, reason, notes, publicKey, signature, byteStream, byteStreamLength')
@@ -699,7 +700,7 @@ class ASDFile(object):
             return None
         return offset
 
-    def __wrap_signature(self):
+    def __wrap_signature(self: object) -> tuple[bytes, int]:
         try:
             signedBytes = struct.pack('b', self.signature.signed)
             signatureTimeBytes = struct.pack('q', self.signature.signatureTime)
@@ -719,7 +720,7 @@ class ASDFile(object):
             return None, None
 
     @__check_offset
-    def __parse_spectra(self, offset):
+    def __parse_spectra(self: object, offset: int) -> tuple[np.array, bytes, int, int]:
         try:
             spectra = np.array(struct.unpack_from('<{}d'.format(self.metadata.channels), self.__asdFileStream, offset))
             offset += (self.metadata.channels * 8)
@@ -730,7 +731,7 @@ class ASDFile(object):
             logger.exception(f"Spectrum data parse error: {e}")
             return None, None, None, None
     
-    def __wrap_spectra(self, spectra):
+    def __wrap_spectra(self: object, spectra: np.array) -> tuple[bytes, int]:
         try:
             spectrumDataBytes = struct.pack('<{}d'.format(self.metadata.channels), *spectra)
             byteLength = self.metadata.channels * 8
@@ -741,7 +742,7 @@ class ASDFile(object):
             return None, None
 
     @__check_offset
-    def __parse_constituantType(self: object, offset: int) -> tuple:
+    def __parse_constituantType(self: object, offset: int) -> tuple[tuple, int]:
         try:
             constituentName, offset = self.__parse_bstr(offset)
             passFail, offset = self.__parse_bstr(offset)
@@ -756,7 +757,7 @@ class ASDFile(object):
             logger.exception(f"Constituant Type parse error {e}")
             return None, None
     
-    def __wrap_constituantType(self, itemsInMeterialReport):
+    def __wrap_constituantType(self: object, itemsInMeterialReport: tuple) -> tuple[bytes, int]:
         try:
             constituentName_bstr, _ = self.__wrap_bstr(itemsInMeterialReport.constituentName)
             passFail_bstr, _ = self.__wrap_bstr(itemsInMeterialReport.passFail)
@@ -770,7 +771,7 @@ class ASDFile(object):
             return None, None
 
     @__check_offset
-    def __parse_bstr(self: object, offset: int) -> tuple:
+    def __parse_bstr(self: object, offset: int) -> tuple[str, int]:
         try:
             size, = struct.unpack_from('<h', self.__asdFileStream, offset)
             offset += struct.calcsize('<h')
@@ -785,7 +786,7 @@ class ASDFile(object):
             logger.exception(f"Byte string parse error: {err}")
             return None, None
     
-    def __wrap_bstr(self, string):
+    def __wrap_bstr(self: object, string: str) -> tuple[bytes, int]:
         try:
             if isinstance(string, bytes):
                 size = len(string)
@@ -803,8 +804,7 @@ class ASDFile(object):
             return None, None
 
     @__check_offset
-    def __parse_Bool(self, offset):
-        # if offset < len(self.__asdFileStream):
+    def __parse_Bool(self: object, offset: int) -> tuple[bool, int]:
         try:
             buffer = self.__asdFileStream[offset:offset + 2]
             if buffer == b'\xFF\xFF':
@@ -815,10 +815,8 @@ class ASDFile(object):
                 raise ValueError("Invalid Boolean value")
         except Exception as e:
             return None, None
-        # else:
-        #     return None, None
     
-    def __wrap_Bool(self, bool):
+    def __wrap_Bool(self: object, bool: bool) -> tuple[bytes, int]:
         try:
             buffer = bytearray(2)
             if bool:
@@ -829,11 +827,10 @@ class ASDFile(object):
                 buffer[1] = 0x00
             return buffer, 2
         except Exception as e:
-            raise e
-        return None, None
+            return None, None
     
     @__check_offset
-    def __parse_auditEvents(self, offset):
+    def __parse_auditEvents(self: object, offset: int) -> tuple[list, int]:
         try:
             auditEvents_str = self.__asdFileStream[offset:].decode('utf-8', errors='ignore')
             auditPattern = re.compile(r'<Audit_Event>(.*?)</Audit_Event>', re.DOTALL)
@@ -853,14 +850,12 @@ class ASDFile(object):
             logger.exception(f"Audit Event parse error: {e}")
             return None, None
         
-    def __wrap_auditEvents(self, auditEvents):
+    def __wrap_auditEvents(self: object, auditEvents: list) -> tuple[bytes, int]:
         try:
             auditEvents_bstr = b''
             for auditEvent in auditEvents:
                 auditEvent_bstr = self.__wrap_auditLogEvent(auditEvent)
                 auditEvents_bstr += auditEvent_bstr
-
-            # auditEvent_bstr = auditEvent.encode('utf-8')
             size = len(auditEvent_bstr)
             byteStream = struct.pack('<h', size) + auditEvent_bstr
             byteStreamLength = len(byteStream)
@@ -869,7 +864,7 @@ class ASDFile(object):
             logger.exception(f"Audit Event wrap error: {e}")
             return None, None
         
-    def __parse_auditLogEvent(self, event: str) -> namedtuple:
+    def __parse_auditLogEvent(self: object, event: str) -> tuple:
         try:
             auditInfo = namedtuple('event', 'application appVersion name login time source function notes')
             root = ET.fromstring(event)
@@ -881,13 +876,13 @@ class ASDFile(object):
             source = root.find('Audit_Source').text
             function = root.find('Audit_Function').text
             notes = root.find('Audit_Notes').text
-            auditEvent_tuple = auditInfo._make((application, appVersion, name, login, time, source, function, notes))
-            return auditEvent_tuple
+            auditEvents = auditInfo._make((application, appVersion, name, login, time, source, function, notes))
+            return auditEvents
         except Exception as e:
             logger.exception(f"Audit Log Data parse error: {e}")
             return None
 
-    def __wrap_auditLogEvent(self, event: namedtuple) -> str:
+    def __wrap_auditLogEvent(self: object, event: tuple) -> str:
         try:
             doc = ET.Element('Audit_Event')
             ET.SubElement(doc, 'Audit_Application').text = event.application
@@ -898,14 +893,14 @@ class ASDFile(object):
             ET.SubElement(doc, 'Audit_Source').text = event.source
             ET.SubElement(doc, 'Audit_Function').text = event.function
             ET.SubElement(doc, 'Audit_Notes').text = event.notes
-            auditEvent_xml_xtr = ET.tostring(doc, encoding='utf-8')
+            auditEvent_xml_str = ET.tostring(doc, encoding='utf-8')
             # logger.info(f"Generated XML: {auditEvent_xml_xtr}")
-            return auditEvent_xml_xtr
+            return auditEvent_xml_str
         except Exception as e:
             logger.error(f"Error generating XML: {e}")
             return None
 
-    def __validate_fileVersion(self) -> int:
+    def __validate_fileVersion(self: object) -> int:
         try:
             # read the file version from the first 3 bytes of the file
             version_data = self.__asdFileStream[:3].decode('utf-8')
@@ -919,7 +914,7 @@ class ASDFile(object):
             logger.exception(f"File Version Validation Error:\n{e}")
             return -1, 3
         
-    def __setFileVersion(self) -> bytes:
+    def __setFileVersion(self: object) -> bytes:
         if self.asdFileVersion == 1:
             versionBytes = "ASD".encode("utf-8")
         elif self.asdFileVersion > 1:
@@ -931,16 +926,16 @@ class ASDFile(object):
         return self.__normalise_spectrum(self.reference, self.metadata)
 
     # Parse the storage time through 9 short integers and store it as a datetime type
-    def __parse_ASDFilewhen(self, when):
-        seconds = when[0]               # // seconds [0,61]
-        minutes = when[1]               # // minutes [0,59]
-        hour = when[2]                  # // hour [0,23]
-        day = when[3]                   # // day of the month [1,31]
-        month = when[4]                 # // month of year [0,11]
-        year = when[5]                  # // years since 1900
-        weekDay = when[6]               # // day of week [0,6] (Sunday = 0)
-        daysInYear = when[7]            # // day of year [0,365]
-        daylighSavingsFlag = when[8]    # // daylight savings flag
+    def __parse_ASDFilewhen(self: object, when: bytes) -> tuple:
+        seconds = when[0]               # seconds [0,61]
+        minutes = when[1]               # minutes [0,59]
+        hour = when[2]                  # hour [0,23]
+        day = when[3]                   # day of the month [1,31]
+        month = when[4]                 # month of year [0,11]
+        year = when[5]                  # years since 1900
+        weekDay = when[6]               # day of week [0,6] (Sunday = 0)
+        daysInYear = when[7]            # day of year [0,365]
+        daylighSavingsFlag = when[8]    # daylight savings flag
         if year < 1900:
             year = year + 1900
         date_datetime = datetime.datetime(year, month + 1, day, hour, minutes, seconds)
@@ -961,7 +956,7 @@ class ASDFile(object):
         byteStream = struct.pack('9h', seconds, minutes, hour, day, month, year, weekDay, daysInYear, daylighSavingsFlag)
         return byteStream
     
-    def __parse_gps(self, gps_field):
+    def __parse_gps(self: object, gps_field: bytes) -> tuple:
         # Domumentation: ASD File Format Version 8, page 4
         gps_tuple = namedtuple('gpsdata', 'heading speed latitude longitude altitude')
         try:
@@ -974,7 +969,7 @@ class ASDFile(object):
             logger.exception(f"GPS parse error: {e}")
             return None
     
-    def __wrap_gps(self, gpsData):
+    def __wrap_gps(self: object, gpsData: tuple) -> bytes:
         try:
             gpsDatadFormat = '<d d d d d h b b b b b h 5s b b'
             gpsDataBytes = struct.pack(gpsDatadFormat, gpsData.trueHeading, gpsData.speed, gpsData.latitude, gpsData.longitude, gpsData.altitude, gpsData.lock, gpsData.hardwareMode, gpsData.ss, gpsData.mm, gpsData.hh, gpsData.flags1, gpsData.flags2, gpsData.satellites, gpsData.filler)
@@ -983,7 +978,7 @@ class ASDFile(object):
             logger.exception(f"GPS wrap error: {e}")
             return None
 
-    def __parse_SmartDetector(self, smartDetectorData):
+    def __parse_SmartDetector(self: object, smartDetectorData: bytes) -> tuple:
         try:
             smartDetectorFormat = '<i f f f h b f f'
             smartDetectorInfo = namedtuple('smartDetector', 'serialNumber signal dark ref status avg humid temp')
@@ -994,7 +989,7 @@ class ASDFile(object):
             logger.exception(f"Smart Detector parse error: {e}")
             return None
     
-    def __wrap_SmartDetector(self, smartDetectorData):
+    def __wrap_SmartDetector(self: object, smartDetectorData: tuple) -> bytes:
         try:
             smartDetectorFormat = '<i f f f h b f f'
             smartDetectorBytes = struct.pack(smartDetectorFormat, smartDetectorData.serialNumber, smartDetectorData.signal, smartDetectorData.dark, smartDetectorData.ref, smartDetectorData.status, smartDetectorData.avg, smartDetectorData.humid, smartDetectorData.temp)
@@ -1004,6 +999,7 @@ class ASDFile(object):
             return None
 
     def __getattr__(self, item):
+        # TODO: Add more properties
         if item == 'reflectance':
             return self.get_reflectance()
         elif item == 'radiance':
@@ -1019,38 +1015,59 @@ class ASDFile(object):
 
     @property
     def reflectance(self):
-        # if self.asdFileVersion >= 2:
-        #     if self.metadata.referenceTime > 0:
-
-        if spectra_type[self.metadata.dataType] == 'REF':
-            res = self.__normalise_spectrum(self.spectrumData, self.metadata) / self.__normalise_spectrum(self.reference, self.metadata)
+        if self.asdFileVersion >= 2:
+            try:
+                # Reflectance calculation, based on the spectrum data and reference data
+                if self.metadata.referenceTime > 0 and self.metadata.dataType == 1:
+                    reflectance = np.divide(self.__normalise_spectrum(self.spectrumData), self.__normalise_spectrum(self.referenceData, self.metadata), where=self.__normalise_spectrum(self.referenceData, self.metadata) != 0)
+                else:
+                    logger.info("Reflectance calculation error: Invalid spectral reflectance data")
+                return reflectance
+            except Exception as e:
+                logger.exception(f"Reflectance calculation error: {e}")
+                return None
         else:
-            raise TypeError('spectral data contains {}. REF data is needed'.format(spectra_type[self.metadata.dataType]))
-        return res
+            logger.info("Reflectance calculation error: Unsupported file version")
+            return None
     
     @property
     def radiance(self):
-        if spectra_type[self.metadata.dataType] == 'RAD':
-            res = self.calibrationSeries_lamp * self.reference * self.spectrumData * self.metadata.intergrationTime_ms / \
-                  (self.calibrationSeries_base *500 *544* np.pi)
+        if self.asdFileVersion >= 7:
+            try:
+                #
+                if self.calibrationHeader.calibrationNum >=3:
+                    if self.calibrationSeriesABS is not None and self.calibrationSeriesLMP is not None and self.calibrationSeriesLMP is not None:
+                        radiance = self.calibrationSeriesLMP * self.referenceData * self.spectrumData * self.metadata.intergrationTime_ms / (self.calibrationSeriesABS * 500 * 544 * self.calibrationSeriesBSE * np.pi)
+                    elif self.calibrationSeriesBSE is not None and self.calibrationSeriesLMP is not None and self.calibrationSeriesFO is not None:
+                        radiance = self.calibrationSeriesLMP * self.referenceData * self.spectrumData * self.metadata.intergrationTime_ms / (self.calibrationSeriesBSE  * 500 * 544 * self.calibrationSeriesFO * np.pi)
+                    else:
+                        logger.info("Radiance calculation error: Invalid spectral radiance data")
+            except Exception as e:
+                logger.exception(f"Radiance calculation error: {e}")
+                return None
+        return radiance
 
-            #res = normalise_spectrum(self.spectrumData, self.metadata)
-        else:
-            raise TypeError('spectral data contains {}. RAD data is needed'.format(spectra_type[self.metadata.dataType]))
-        return res
+    def __normalise_spectrum(self: object, sepctra) -> np.array:
+        # normalise the spectrum data, for VNIR and SWIR1, SWIR2, the data is normalised based on the integration time and gain
+        sepctra = sepctra.copy()
+        splice1_index = int(self.metadata.splice1_wavelength)
+        splice2_index = int(self.metadata.splice2_wavelength)
+        sepctra[:splice1_index] = sepctra[:splice1_index] / self.metadata.intergrationTime_ms
+        sepctra[splice1_index:splice2_index] = sepctra[splice1_index:splice2_index] * self.metadata.swir1Gain / 2048
+        sepctra[splice2_index:] = sepctra[splice2_index:] * self.metadata.swir2Gain / 2048
+        return sepctra
 
     @property
-    def __normalise_spectrum(self, spec, metadata):
-        res = spec.copy()
-        splice1_index = int(metadata.splice1_wavelength)
-        splice2_index = int(metadata.splice2_wavelength)
-        res[:splice1_index] = spec[:splice1_index] / metadata.intergrationTime_ms
-        res[splice1_index:splice2_index] = spec[splice1_index:splice2_index] * metadata.swir1Gain / 2048
-        res[splice2_index:] = spec[splice2_index:] * metadata.swir1Gain / 2048
-        return res
-        # spec[idx1] < - spec[idx1] / metadata$it
-        # spec[idx2] < - spec[idx2] * metadata$swir1Gain / 2048
-        # spec[idx3] < - spec[idx3] * metadata$swir2Gain / 2048
+    def reflectanceNoDeriv(self):
+        return self.reflectance
+
+    @property
+    def reflectance1stDeriv(self):
+        return np.gradient(self.reflectance)
+
+    @property
+    def reflectance2ndDeriv(self):
+        return np.gradient(np.gradient(self.reflectance))
 
     @property
     def derivative(self):
@@ -1058,18 +1075,6 @@ class ASDFile(object):
 
     @property
     def absoluteReflectance(self):
-        pass
-
-    @property
-    def reflectanceNoDeriv(self):
-        pass
-
-    @property
-    def reflectance1stDeriv(self):
-        pass
-
-    @property
-    def reflectance2ndDeriv(self):
         pass
 
     @property
