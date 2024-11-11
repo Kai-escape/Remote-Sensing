@@ -38,16 +38,11 @@ classifierDataType_dict = {"SAM": 0 , "GALACTIC": 1, "CAMOPREDICT": 2, "CAMOCLAS
 calibrationType_dict = {"ABSOLUTE": 0, "BASE": 1, "LAMP": 2, "FIBER": 3}    # calibrationSeries.calibrationType
 # ABS, Absolute Reflectance File; BSE, Base File; LMP, Lamp File; FO, Fiber Optic File
 
-flag1_vnir_saturation = 1
-flag1_swir1_saturation = 2
-flag1_swir2_saturation = 4
-Tec1_alarm = 8
-Tec2_alarm = 16
-# Vnir Saturation    0 0 0 0  0 0 0 1   0x01
-# Swir1 Saturation   0 0 0 0  0 0 1 0   0x02
-# Swir2 Saturation   0 0 0 0  0 1 0 0   0x04
-# Swir1 Tec Alarm    0 0 0 0  1 0 0 0   0x08
-# Swir2 Tec Alarm    0 0 0 1  0 0 0 0   0x16
+flag1_vnir_saturation = 1   # Vnir Saturation    0 0 0 0  0 0 0 1   0x01
+flag1_swir1_saturation = 2  # Swir1 Saturation   0 0 0 0  0 0 1 0   0x02
+flag1_swir2_saturation = 4  # Swir2 Saturation   0 0 0 0  0 1 0 0   0x04
+Tec1_alarm = 8  # Swir1 Tec Alarm    0 0 0 0  1 0 0 0   0x08
+Tec2_alarm = 16 # Swir2 Tec Alarm    0 0 0 1  0 0 0 0   0x16
 
 
 class ASDFile(object):
@@ -897,7 +892,7 @@ class ASDFile(object):
             # logger.info(f"Generated XML: {auditEvent_xml_xtr}")
             return auditEvent_xml_str
         except Exception as e:
-            logger.error(f"Error generating XML: {e}")
+            logger.exception(f"Error generating XML: {e}")
             return None
 
     def __validate_fileVersion(self: object) -> int:
@@ -921,9 +916,6 @@ class ASDFile(object):
             versionBytes = f"as{self.asdFileVersion}".encode("utf-8")
         # logger.info(f"File Version: {self.asdFileVersion}")
         return versionBytes, 3
-    
-    def get_white_reference(self):
-        return self.__normalise_spectrum(self.reference, self.metadata)
 
     # Parse the storage time through 9 short integers and store it as a datetime type
     def __parse_ASDFilewhen(self: object, when: bytes) -> tuple:
@@ -997,6 +989,21 @@ class ASDFile(object):
         except Exception as e:
             logger.exception(f"Smart Detector wrap error: {e}")
             return None
+    
+    def __checkSaturationError(self:object) -> list:
+        # To identify Error codes in flags2
+        errors = []
+        if self.metadata.flags2 & flag1_vnir_saturation:
+            errors.append("VNIR saturation")
+        if self.metadata.flags2 & flag1_swir1_saturation:
+            errors.append("SWIR1 saturation")
+        if self.metadata.flags2 & flag1_swir2_saturation:
+            errors.append("SWIR2 saturation")
+        if self.metadata.flags2 & Tec1_alarm:
+            errors.append("TEC1 Alarm")
+        if self.metadata.flags2 & Tec2_alarm:
+            errors.append("TEC2 Alarm")
+        return errors
 
     def __getattr__(self, item):
         # TODO: Add more properties
@@ -1012,6 +1019,9 @@ class ASDFile(object):
             return self.reference
         else:
             return None
+    
+    def get_white_reference(self):
+        return self.__normalise_spectrum(self.reference, self.metadata)
 
     @property
     def reflectance(self):
@@ -1118,8 +1128,8 @@ class ASDFile(object):
 
 # define logger
 logging.basicConfig(
-    filename=os.path.join(os.path.dirname(__file__), '__testData__', 'asd_file_analysis.log'),
-    level=logging.INFO,
+    filename=os.path.join(os.path.dirname(__file__), '__testData__', 'asd_file_handle.log'),
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s - Line: %(lineno)d'
 )
 
