@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-class File(ABC):
+class FileHandler(ABC):
 
     def __init__(self, filePath):
 
@@ -12,4 +12,8 @@ class File(ABC):
     
     @abstractmethod
     def write(self, content):
+        pass
+
+    @abstractmethod
+    def update(self, content):
         pass

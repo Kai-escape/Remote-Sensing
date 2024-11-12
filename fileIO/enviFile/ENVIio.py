@@ -1,6 +1,9 @@
 import builtins
+import logging
 from os import name
 from typing import NamedTuple
+from venv import logger
+from attr import dataclass
 from click import File
 import numpy as np
 from prometheus_client import h
@@ -13,46 +16,44 @@ class ENVIfile(File):
         self.hdr = ENVIhdr()
         self.data = EnviData()
 
-class ENVIhdr():
+@dataclass
+class ENVIhder():
+    acquisitionTime: str
+    bandNames: str
+    bands: int
+    bbl: str
+    byteOrder: str
+    classLookup: str
+    classNames: str
+    classes: int
+    cloudCover: str
+    colorTable: str
+    complexFunction: str
+    coordinateSystemString: str
+    dataGainValues: str
+    dataIgnoreValue: str
+    dataOffsetValues: str
+    dataReflectanceGainValues: str
+    dataReflectanceOffsetValues: str
+    
+
+
+
+class ENVIhdrHandler():
 
     __all_paramsInfo = NamedTuple("allParas", ["acquisition time", "band names", "bands", "bbl", "byte order", "class lookup", "class names", "classes", "cloud cover", "color table", "complex function", "coordinate system string", "data gain values", "data ignore value", "data offset values", "data reflectance gain values", "data reflectance offset values", "data type", "default bands", "default stretch", "dem band", "dem file", "description", "file type", "fwhm", "geo points", "header offset", "interleave", "lines", "map info", "pixel size", "projection info", "read procedures", "reflectance scale factor", "rpc info", "samples", "security tag", "sensor type", "solar irradiance", "spectra names", "sun azimuth", "sun elevation", "timestamp", "wavelength", "wavelength units", "x start", "y start", "z plot average", "z plot range", "z plot titles", ])
+
     __std_paramsInfo = NamedTuple("stdParas", ['description', 'samples', 'lines', 'bands', 'header offset', 'file type', 'data type', 'interleave', 'sensor type', 'byte order', 'reflectance scale factor','map info'])
+
     __req_paramsInfo = NamedTuple("reqParas", ['samples', 'lines', 'bands', 'header offset', 'file type', 'data type', 'interleave', 'byte order'])
+
+    # self.hdr_dict = {"acquisition time": None, "band names": None, "bands": None, "bbl": None, "byte order": None,"class lookup": None, "class names": None,"classes": None, "cloud cover": None, "color table": None, "complex function": None, "coordinate system string": None, "data gain values": None, "data ignore value": None, "data offset values": None, "data reflectance gain values": None, "data reflectance offset values": None, "data type": None, "default bands": None, "default stretch": None, "dem band": None, "dem file": None, "description": None, "file type": None, "fwhm": None, "geo points": None, "header offset": None, "interleave": None, "lines": None, "map info": None, "pixel size": None, "projection info": None, "read procedures": None, "reflectance scale factor": None, "rpc info": None, "samples": None, "security tag": None, "sensor type": None, "solar irradiance": None, "spectra names": None, "sun azimuth": None, "sun elevation": None, "timestamp": None, "wavelength": None, "wavelength units": None, "x start": None, "y start": None, "z plot average": None, "z plot range": None, "z plot titles": None}
 
     def __init__(self):
 
-        self.hdr_dict = {"acquisition time": None, "band names": None,
-                         "bands": None, "bbl": None, "byte order": None,
-                         "class lookup": None, "class names": None,
-                         "classes": None, "cloud cover": None,
-                         "color table": None, "complex function": None,
-                         "coordinate system string": None,
-                         "data gain values": None,
-                         "data ignore value": None, "data offset values": None,
-                         "data reflectance gain values": None,
-                         "data reflectance offset values": None,
-                         "data type": None, "default bands": None,
-                         "default stretch": None, "dem band": None,
-                         "dem file": None, 
-                         "description": None, "file type": None, "fwhm": None,
-                         "geo points": None, "header offset": None,
-                         "interleave": None,
-                         "lines": None, "map info": None, "pixel size": None,
-                         "projection info": None, "read procedures": None,
-                         "reflectance scale factor": None, "rpc info": None,
-                         "samples": None, "security tag": None,
-                         "sensor type": None,
-                         "solar irradiance": None, "spectra names": None,
-                         "sun azimuth": None, "sun elevation": None,
-                         "timestamp": None, "wavelength": None,
-                         "wavelength units": None,
-                         "x start": None, "y start": None,
-                         "z plot average": None,
-                         "z plot range": None, "z plot titles": None}
-        self.std_params = 
-        self.req_params = 
-        
-        self.requriedParams = 
+    self.allParas = None
+    self.stdParas = None
+    self.reqParas = None
     
     @property
     def hdr_dict(self):
@@ -72,10 +73,10 @@ class ENVIhdr():
 
         try:
             starts_with_ENVI = f.readline().strip().startswith('ENVI')
-        except UnicodeDecodeError:
-            msg = 'File does not appear to be an ENVI header (appears to be a 'binary file).'
+        except Exception as e:
+            logger.
+            msg = f'File does not appear to be an ENVI header (appears to be a binary file).\n {e}'
             f.close()
-            raise FileNotAnEnviHeader(msg)
         else:
             if not starts_with_ENVI:
                 msg = 'File does not appear to be an ENVI header (missing "ENVI" \
@@ -163,6 +164,7 @@ class EnviData()
                      ('13', np.uint32),                 # 32-bit unsigned int
                      ('14', np.int64),                  # 64-bit int
                      ('15', np.uint64)]                 # 64-bit unsigned int
+        
         self.envi_to_dtype = {'1': 'uint8', '2': 'int16', '3': 'int32',
                               '4': 'float32', '5': 'float64', '6': 'complex64',
                               '9': 'complex128', '12': 'uint16', '13': 'uint32',
@@ -209,13 +211,7 @@ class EnviData()
             object.
         Raises:
             TypeError, EnviDataFileNotFoundError
-        If the specified file is not found in the current directory, all
-        directories listed in the SPECTRAL_DATA environment variable will be
-        searched until the file is found.  Based on the name of the header file,
-        this function will search for the image file in the same directory as the
-        header, looking for a file with the same name as the header but different
-        extension. Extensions recognized are .img, .dat, .sli, and no extension.
-        Capitalized versions of the file extensions are also searched.
+        If the specified file is not found in the current directory, all directories listed in the SPECTRAL_DATA environment variable will be searched until the file is found.  Based on the name of the header file, this function will search for the image file in the same directory as the header, looking for a file with the same name as the header but different extension. Extensions recognized are .img, .dat, .sli, and no extension. Capitalized versions of the file extensions are also searched.
         '''
 
         header_path = find_file_path(file)
@@ -288,3 +284,13 @@ class EnviData()
                 logger.warning('Unable to parse bad band list (bbl) in ENVI ' \
                             'header as integers.')
         return img
+
+
+# define logger
+logging.basicConfig(
+    filename=os.path.join(os.path.dirname(__file__), '__testData__', 'asd_file_handle.log'),
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s - Line: %(lineno)d'
+)
+
+logger = logging.getLogger(__name__)
