@@ -1,12 +1,14 @@
 import builtins
 import logging
-from os import name
+from os import error, name, read
 from typing import NamedTuple
 from venv import logger
-from attr import dataclass
+from attr import dataclass, field
 from click import File
+from more_itertools import first
 import numpy as np
 from prometheus_client import h
+from pyparsing import line
 from fileIO import File
 
 
@@ -17,12 +19,17 @@ class ENVIfile(File):
         self.data = EnviData()
 
 @dataclass
-class ENVIhder():
-    acquisitionTime: str
-    bandNames: str
-    bands: int
-    bbl: str
-    byteOrder: str
+class ENVIhdr():
+    '''
+    ENVI header file class
+    ENVI header file is a text file that contains metadata information about the image data file.
+    The required parameters are 8: bands, byteOrder, dataType, fileType, headerOffset, interleave, lines, samples.
+    '''
+    acquisitionTime: str = field(default=None)
+    bandNames: str = field(default=None)
+    bands: int = field(default=None, metadata={'description': 'Number of bands in the image', 'required': True})
+    bbl: str = field(metadata={'description': 'Bad band list', 'required': False})
+    byteOrder: str = field(metadata={'description': 'Byte order of the data', 'required': True})
     classLookup: str
     classNames: str
     classes: int
@@ -35,25 +42,59 @@ class ENVIhder():
     dataOffsetValues: str
     dataReflectanceGainValues: str
     dataReflectanceOffsetValues: str
-    
+    dataType: str = field(metadata={'description': 'Data type of the image', 'required': True}, validator=lambda x: x in ['1', '2', '3', '4', '5', '6', '9', '12', '13', '14', '15'])
+    defaultBands: str
+    defaultStretch: str
+    demBand: str
+    demFile: str
+    description: str
+    fileType: str = field(metadata={'description': 'Type of the file: ', 'required': True})
+    fwhm: str
+    geoPoints: str
+    headerOffset: int = field(metadata={'description': 'Offset of the header', 'required': True})
+    interleave: str = field(metadata={'description': 'Interleave format of the data', 'required': True}, validator=lambda x: x in ['BIL', 'BIP', 'BSQ'])
+    lines: int = field(metadata={'description': 'Number of lines in the image', 'required': True})
+    mapInfo: str
+    pixelSize: str
+    projectionInfo: str
+    readProcedures: str
+    reflectanceScaleFactor: str
+    rpcInfo: str
+    samples: int = field(metadata={'description': 'Number of samples(pixels) per image line for each band', 'required': True})
+    securityTag: str
+    sensorType: str
+    solarIrradiance: str
+    spectraNames: str
+    sunAzimuth: str
+    sunElevation: str
+    timestamp: str
+    wavelength: str = field(metadata={'description': 'Wavelength of the image'})
+    wavelengthUnits: str = field(metadata={'description': 'Units of the wavelength'}, validator=lambda x: x in ['Micrometers', 'um', 'Nanometers', 'nm', 'Millimeters', 'mm', 'Centimeters', 'cm', 'Meters', 'm', 'Wavenumber', 'Angstroms', 'GHz', 'MHz', 'Index', 'Unknown'])
+    xStart: str
+    yStart: str
+    zPlotAverage: str
+    zPlotRange: str
+    zPlotTitles: str
+
+
+
+
+
 
 
 
 class ENVIhdrHandler():
 
-    __all_paramsInfo = NamedTuple("allParas", ["acquisition time", "band names", "bands", "bbl", "byte order", "class lookup", "class names", "classes", "cloud cover", "color table", "complex function", "coordinate system string", "data gain values", "data ignore value", "data offset values", "data reflectance gain values", "data reflectance offset values", "data type", "default bands", "default stretch", "dem band", "dem file", "description", "file type", "fwhm", "geo points", "header offset", "interleave", "lines", "map info", "pixel size", "projection info", "read procedures", "reflectance scale factor", "rpc info", "samples", "security tag", "sensor type", "solar irradiance", "spectra names", "sun azimuth", "sun elevation", "timestamp", "wavelength", "wavelength units", "x start", "y start", "z plot average", "z plot range", "z plot titles", ])
+    # __all_paramsInfo = NamedTuple("allParas", ["acquisition time", "band names", "bands", "bbl", "byte order", "class lookup", "class names", "classes", "cloud cover", "color table", "complex function", "coordinate system string", "data gain values", "data ignore value", "data offset values", "data reflectance gain values", "data reflectance offset values", "data type", "default bands", "default stretch", "dem band", "dem file", "description", "file type", "fwhm", "geo points", "header offset", "interleave", "lines", "map info", "pixel size", "projection info", "read procedures", "reflectance scale factor", "rpc info", "samples", "security tag", "sensor type", "solar irradiance", "spectra names", "sun azimuth", "sun elevation", "timestamp", "wavelength", "wavelength units", "x start", "y start", "z plot average", "z plot range", "z plot titles", ])
 
     __std_paramsInfo = NamedTuple("stdParas", ['description', 'samples', 'lines', 'bands', 'header offset', 'file type', 'data type', 'interleave', 'sensor type', 'byte order', 'reflectance scale factor','map info'])
 
-    __req_paramsInfo = NamedTuple("reqParas", ['samples', 'lines', 'bands', 'header offset', 'file type', 'data type', 'interleave', 'byte order'])
-
-    # self.hdr_dict = {"acquisition time": None, "band names": None, "bands": None, "bbl": None, "byte order": None,"class lookup": None, "class names": None,"classes": None, "cloud cover": None, "color table": None, "complex function": None, "coordinate system string": None, "data gain values": None, "data ignore value": None, "data offset values": None, "data reflectance gain values": None, "data reflectance offset values": None, "data type": None, "default bands": None, "default stretch": None, "dem band": None, "dem file": None, "description": None, "file type": None, "fwhm": None, "geo points": None, "header offset": None, "interleave": None, "lines": None, "map info": None, "pixel size": None, "projection info": None, "read procedures": None, "reflectance scale factor": None, "rpc info": None, "samples": None, "security tag": None, "sensor type": None, "solar irradiance": None, "spectra names": None, "sun azimuth": None, "sun elevation": None, "timestamp": None, "wavelength": None, "wavelength units": None, "x start": None, "y start": None, "z plot average": None, "z plot range": None, "z plot titles": None}
+    __req_paramsInfo = NamedTuple("reqParas", "bands, byteOrder, dataType, fileType, headerOffset, interleave, lines, samples")
 
     def __init__(self):
 
-    self.allParas = None
-    self.stdParas = None
-    self.reqParas = None
+        self.stdParas = None
+        self.reqParas = None
     
     @property
     def hdr_dict(self):
@@ -69,57 +110,46 @@ class ENVIhdrHandler():
         dictionary as strings.  Header field names are treated as case
         insensitive and all keys in the dictionary are lowercase.
         '''
-        f = builtins.open(file, 'r')
-
-        try:
-            starts_with_ENVI = f.readline().strip().startswith('ENVI')
-        except Exception as e:
-            logger.
-            msg = f'File does not appear to be an ENVI header (appears to be a binary file).\n {e}'
-            f.close()
-        else:
-            if not starts_with_ENVI:
-                msg = 'File does not appear to be an ENVI header (missing "ENVI" \
-                at beginning of first line).'
-                f.close()
-                raise FileNotAnEnviHeader(msg)
-
         with open(file, 'r') as f:
-            hdrfile
+            try:
+                firstLine = f.readline().strip().startswith('ENVI')
+            except Exception as e:
+                logger.error(f'File does not appear to be an ENVI header (appears to be a binary file).\n{e}')
+            else:
+                if not firstLine:
+                    logger.error = 'File does not appear to be an ENVI header (missing "ENVI" at beginning of first line).'
 
-        lines = f.readlines()
-        f.close()
+            lines = f.readlines()
+            dict = {}
+            try:
+                while lines:
+                    line = lines.pop(0)
+                    if line.find('=') == -1: continue
+                    if line[0] == ';': continue
 
-        dict = {}
-        try:
-            while lines:
-                line = lines.pop(0)
-                if line.find('=') == -1: continue
-                if line[0] == ';': continue
-
-                (key, sep, val) = line.partition('=')
-                key = key.strip()
-                if not key.islower():
-                    key = key.lower()
-                val = val.strip()
-                if val and val[0] == '{':
-                    str = val.strip()
-                    while str[-1] != '}':
-                        line = lines.pop(0)
-                        if line[0] == ';': continue
-                        str += '\n' + line.strip()
-                    if key == 'description':
-                        dict[key] = str.strip('{}').strip()
+                    (key, sep, val) = line.partition('=')
+                    key = key.strip()
+                    if not key.islower():
+                        key = key.lower()
+                    val = val.strip()
+                    if val and val[0] == '{':
+                        str = val.strip()
+                        while str[-1] != '}':
+                            line = lines.pop(0)
+                            if line[0] == ';': continue
+                            str += '\n' + line.strip()
+                        if key == 'description':
+                            dict[key] = str.strip('{}').strip()
+                        else:
+                            vals = str[1:-1].split(',')
+                            for j in range(len(vals)):
+                                vals[j] = vals[j].strip()
+                            dict[key] = vals
                     else:
-                        vals = str[1:-1].split(',')
-                        for j in range(len(vals)):
-                            vals[j] = vals[j].strip()
-                        dict[key] = vals
-                else:
-                    dict[key] = val
-            return dict
-        except:
-            raise EnviHeaderParsingError()
+                        dict[key] = val
+                return dict
+            except Exception as e:
+                logger.error(f'Error reading ENVI header file.\n{e}')
     
     def write(self, fileName, is_library= False):
 
@@ -150,26 +180,25 @@ class ENVIhdrHandler():
 
         return headr_dict
 
-class EnviData()
+class EnviData():
     def __init__(self):
         self.exts= ['img', 'dat', 'sli', 'hyspex', 'raw']
-        self.dtype= [('1', np.uint8),                   # unsigned byte
-                     ('2', np.int16),                   # 16-bit int
-                     ('3', np.int32),                   # 32-bit int
-                     ('4', np.float32),                 # 32-bit float
-                     ('5', np.float64),                 # 64-bit float
-                     ('6', np.complex64),               # 2x32-bit complex
-                     ('9', np.complex128),              # 2x64-bit complex
-                     ('12', np.uint16),                 # 16-bit unsigned int
-                     ('13', np.uint32),                 # 32-bit unsigned int
-                     ('14', np.int64),                  # 64-bit int
-                     ('15', np.uint64)]                 # 64-bit unsigned int
+        self.dtype= [('1', np.uint8),                       # unsigned byte
+                     ('2', np.int16),                       # 16-bit int
+                     ('3', np.int32),                       # 32-bit int
+                     ('4', np.float32),                     # 32-bit float
+                     ('5', np.float64),                     # 64-bit float
+                     ('6', np.complex64),                   # 2x32-bit complex
+                     ('9', np.complex128),                  # 2x64-bit complex
+                     ('12', np.uint16),                     # 16-bit unsigned int
+                     ('13', np.uint32),                     # 32-bit unsigned int
+                     ('14', np.int64),                      # 64-bit int
+                     ('15', np.uint64)]                     # 64-bit unsigned int
         
         self.envi_to_dtype = {'1': 'uint8', '2': 'int16', '3': 'int32',
                               '4': 'float32', '5': 'float64', '6': 'complex64',
                               '9': 'complex128', '12': 'uint16', '13': 'uint32',
                               '14': 'int64', '15': 'uint64'}
-        self.
     
     def get_params(self):
         '''
