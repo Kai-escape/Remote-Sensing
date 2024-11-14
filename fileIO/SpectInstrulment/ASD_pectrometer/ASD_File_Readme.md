@@ -1,5 +1,9 @@
 #### ASD spectral file read, update, and write
 
+
+
+##### Version 1 (asdFileHandle_1.py)
+
 | ASD File Structure             | class ASDFile()                                        |
 | ------------------------------ | ---------------------------------------------------- |
 | Spectrum File Header           | self.asdFileVersion; self.metadata                   |
@@ -15,7 +19,11 @@
 | Audit Log                      | self.auditLog                                        |
 | Signature                      | self.signature                                       |
 
-#### Reference
+##### Upcoming Version 2 (asdFileHandle_1.py)
+
+All data is wrapped in Python `@dataclass` to support validation and new features for QA/QC check of spectral database building.
+
+##### Reference
 
 "ASD File Format v8"
 
