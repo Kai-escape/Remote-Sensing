@@ -1,4 +1,4 @@
-#### Readme reserved for Agilent FTIR
+#### Readme reserved for Agilent FTIR Spectrometer
 
 
 
