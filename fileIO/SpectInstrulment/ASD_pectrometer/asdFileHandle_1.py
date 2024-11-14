@@ -9,6 +9,7 @@
 @License :   (C)Copyright 2023-2024
 Copyright Statement:   Full Copyright
 @Desc    :   According to "ASD File Format version 8: Revision B"
+             Version 1.0 is now deprecated for the new version 2.x.
 '''
 
 import os
@@ -150,14 +151,7 @@ class ASDFile(object):
         return readSuccess
 
     def update(self, field_name: str, new_value):
-        # TODO: Add the update method to update the fields.
-        # TODO: new_vulue should be the same type as the field.
-        if self.metadata is not None:
-            if not hasattr(self.metadata, field_name):
-                raise ValueError(f"{field_name} is not vaild filed in {type(self.metadata).__name__} .")
-            self.metadata = self.metadata._replace(**{field_name: new_value})
-        if field_name in ['channel1Wavelength', 'channels', 'wavelengthStep']:
-            self.__wavelengths = np.arange(self.metadata.channel1Wavelength, self.metadata.channel1Wavelength + self.metadata.channels * self.metadata.wavelengthStep, self.metadata.wavelengthStep)
+        pass
         
     def write(self: object, file: str) -> bool:
         if os.path.exists(file):
