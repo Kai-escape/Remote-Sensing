@@ -19,11 +19,7 @@
 | Audit Log                      | self.auditLog                                        |
 | Signature                      | self.signature                                       |
 
-<<<<<<< HEAD
 ##### Upcoming Version 2 (asdFileHandle_2.py)
-=======
-##### Upcoming Version 2 (asdFileHandle_1.py)
->>>>>>> 86b770a2fecf2bdd1ee6a951fa2c71a00d34f3e2
 
 All data is wrapped in Python `@dataclass` to support validation and new features for QA/QC check of spectral database building.
 
