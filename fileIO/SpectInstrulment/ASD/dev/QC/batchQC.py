@@ -33,7 +33,7 @@ def setup_logging(log_file):
 #     # format='%(asctime)s - %(name)s - %(levelname)s - %(message)s - Line: %(lineno)d'  # 日志格式
 #     format='%(message)s'  # 日志格式
 # )
-# logger = logging.getLogger(__name__)
+
 
 # -------------------设置-------------------
 # 要检查的文件夹，包含多个asd文件，读取文件夹及子文件夹下所有asd文件
@@ -49,6 +49,7 @@ logFile = r'D:\MacBook\MacBookDocument\VSCode\SourceCode\RemoteSensing\fileIO\Sp
 
 
 setup_logging(logFile)  # 或者使用其他路径
+logger = logging.getLogger(__name__)
 
 flag1_vnir_saturation = 1   # Vnir Saturation    0 0 0 0  0 0 0 1   0x01
 flag1_swir1_saturation = 2  # Swir1 Saturation   0 0 0 0  0 0 1 0   0x02
