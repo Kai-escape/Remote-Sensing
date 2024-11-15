@@ -6,9 +6,9 @@ import re
 import numpy as np
 import sys
 
-# 将父目录添加到sys.path中
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from fileIO.SpectInstrulment.ASD.asdFileHandle_1 import *
+# # 将父目录添加到sys.path中
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# from fileIO.SpectInstrulment.ASD.asdFileHandle_1 import *
 
 def list_fullpath_of_all_files_with_ext(directory, ext):
     file_paths = []
@@ -163,11 +163,11 @@ def batch_read_and_write(filePath):
 
 
 # 配置日志记录
-logging.basicConfig(
-    filename = r'D:\MacBook\MacBookDocument\VSCode\SourceCode\RemoteSensing\SpectInstrulment\asd_Spect\__testData__\asd_file_analysis.log',  # 日志文件名
-    level=logging.DEBUG,  # 日志级别
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s - Line: %(lineno)d'  # 日志格式
-    )
+# logging.basicConfig(
+#     filename = r'D:\MacBook\MacBookDocument\VSCode\SourceCode\RemoteSensing\SpectInstrulment\asd_Spect\__testData__\asd_file_analysis.log',  # 日志文件名
+#     level=logging.DEBUG,  # 日志级别
+#     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s - Line: %(lineno)d'  # 日志格式
+#     )
 
 logger = logging.getLogger(__name__)
 

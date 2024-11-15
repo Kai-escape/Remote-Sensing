@@ -1121,10 +1121,11 @@ class ASDFile(object):
 # Custom...
 
 # define logger
-logging.basicConfig(
-    filename=os.path.join(os.path.dirname(__file__), '__testData__', 'asd_file_handle.log'),
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s - Line: %(lineno)d'
-)
+# logging.basicConfig(
+#     filename=os.path.join(os.path.dirname(__file__), '__testData__', 'asd_file_handle.log'),
+#     filemode=log_file,
+#     level=logging.DEBUG,
+#     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s - Line: %(lineno)d'
+# )
 
 logger = logging.getLogger(__name__)

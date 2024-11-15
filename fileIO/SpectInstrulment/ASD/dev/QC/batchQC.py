@@ -4,20 +4,15 @@ import sys
 import os
 import logging
 import datetime
-
-
-# # 将父目录添加到sys.path中
-# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 from fileIO.SpectInstrulment.ASD.asdFileHandle_1 import *
-from fileIO.SpectInstrulment.ASD.__tests__.testing_batchReadAndWrite import *
-# from testing_batchReadAndWrite import *
+from fileIO.SpectInstrulment.ASD.dev.testing_batchReadAndWrite import *
 
 def setup_logging(log_file):
 
     # 生成日志文件名，包含日期
     current_date = datetime.datetime.now().strftime('%Y%m%d')
     log_file = os.path.join(os.path.dirname(log_file), os.path.basename(log_file).replace('.log', f'_asd_qc_{current_date}.log'))
+    logging.info(f"日志文件：{log_file}")
     # 配置日志格式和级别
     logging.basicConfig(
         # 日志级别
